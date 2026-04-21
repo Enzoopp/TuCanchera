@@ -1,120 +1,114 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
-import './App.css'
+import { BrowserRouter, Routes, Route, Outlet, Navigate } from 'react-router-dom'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { AuthProvider } from '@/context/AuthContext'
+import { TenantProvider } from '@/context/TenantContext'
+import { useAuth } from '@/context/AuthContext'
+import ProtectedRoute from '@/components/ProtectedRoute'
+import AdminLayout from '@/components/AdminLayout'
+import Login from '@/pages/Login'
+import Register from '@/pages/Register'
+import RegisterAdmin from '@/pages/RegisterAdmin'
+import ForgotPassword from '@/pages/ForgotPassword'
+import ResetPassword from '@/pages/ResetPassword'
+import AuthCallback from '@/pages/AuthCallback'
+import Complejo from '@/pages/Complejo'
+import Landing from '@/pages/Landing'
+import Reservar from '@/pages/Reservar'
+import MisReservas from '@/pages/MisReservas'
+import Dashboard from '@/pages/admin/Dashboard'
+import GestionComplejo from '@/pages/admin/GestionComplejo'
+import GestionCanchas from '@/pages/admin/GestionCanchas'
+import Bloqueos from '@/pages/admin/Bloqueos'
+import ReservasAdmin from '@/pages/admin/Reservas'
+import Estadisticas from '@/pages/admin/Estadisticas'
+import { Toaster } from '@/components/ui/sonner'
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 1000 * 60 * 5,
+      retry: 1,
+    },
+  },
+})
+
+// Ruta raíz inteligente:
+// - No autenticado → login
+// - Admin         → panel admin
+// - Cliente       → explorar complejos
+function RootRedirect() {
+  const { user, rol, loading } = useAuth()
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary-200 border-t-primary-600" />
+      </div>
+    )
+  }
+
+  if (!user) return <Navigate to="/login" replace />
+  if (rol === 'admin') return <Navigate to="/admin/dashboard" replace />
+  return <Navigate to="/explorar" replace />
+}
+
+// Layout para rutas que requieren TenantContext (/:slug/*)
+function TenantLayout() {
+  return (
+    <TenantProvider>
+      <Outlet />
+    </TenantProvider>
+  )
+}
 
 function App() {
-  const [count, setCount] = useState(0)
-
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <BrowserRouter>
+          <Routes>
+            {/* Raíz: redirige según estado de auth */}
+            <Route path="/" element={<RootRedirect />} />
 
-      <div className="ticks"></div>
+            {/* Rutas públicas de autenticación */}
+            <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<Register />} />
+            <Route path="/register-admin" element={<RegisterAdmin />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
+            <Route path="/auth/callback" element={<AuthCallback />} />
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
+            {/* Explorar complejos (pública) */}
+            <Route path="/explorar" element={<Landing />} />
 
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
+            {/* Rutas protegidas: cualquier rol autenticado */}
+            <Route element={<ProtectedRoute />}>
+              <Route path="/mis-reservas" element={<MisReservas />} />
+            </Route>
+
+            {/* Rutas admin */}
+            <Route element={<ProtectedRoute rol="admin" />}>
+              <Route path="/admin" element={<AdminLayout />}>
+                <Route index element={<Navigate to="dashboard" replace />} />
+                <Route path="dashboard" element={<Dashboard />} />
+                <Route path="complejo" element={<GestionComplejo />} />
+                <Route path="canchas" element={<GestionCanchas />} />
+                <Route path="bloqueos" element={<Bloqueos />} />
+                <Route path="reservas" element={<ReservasAdmin />} />
+                <Route path="estadisticas" element={<Estadisticas />} />
+              </Route>
+            </Route>
+
+            {/* Rutas del complejo por slug (tenant) */}
+            <Route path="/:slug" element={<TenantLayout />}>
+              <Route index element={<Complejo />} />
+              <Route path="reservar/:canchaId" element={<Reservar />} />
+            </Route>
+          </Routes>
+          <Toaster />
+        </BrowserRouter>
+      </AuthProvider>
+    </QueryClientProvider>
   )
 }
 
