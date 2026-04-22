@@ -8,13 +8,7 @@ import { useAuth } from '@/context/AuthContext'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
+import { Check, Zap, MailCheck } from 'lucide-react'
 
 export default function Login() {
   const navigate = useNavigate()
@@ -64,23 +58,67 @@ export default function Login() {
 
   const isLoading = submitted && (authLoading || !!user)
 
+  const tagline = 'Reservá tu cancha al instante'
+  const bullets = [
+    'Disponibilidad en tiempo real',
+    'Pago online seguro',
+    'Confirmación instantánea'
+  ]
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-neutral-50 px-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <CardTitle className="text-2xl font-bold text-primary-600">
-            TuCanchera
-          </CardTitle>
-          <CardDescription>Iniciá sesión para reservar tu cancha</CardDescription>
-        </CardHeader>
-        <CardContent>
+    <div className="flex min-h-screen bg-white">
+      {/* Panel izquierdo - oculto en mobile */}
+      <div className="hidden lg:flex lg:w-[480px] shrink-0 flex-col justify-between bg-neutral-950 px-12 py-12 relative overflow-hidden">
+        {/* Grid pattern */}
+        <div
+          className="absolute inset-0 opacity-[0.04]"
+          style={{
+            backgroundImage: 'linear-gradient(var(--color-primary-400) 1px, transparent 1px), linear-gradient(90deg, var(--color-primary-400) 1px, transparent 1px)',
+            backgroundSize: '40px 40px'
+          }}
+        />
+
+        {/* Glow */}
+        <div className="absolute -top-32 -left-32 h-64 w-64 rounded-full bg-primary-600/20 blur-3xl" />
+
+        <div className="relative">
+          <Link to="/explorar" className="flex items-center gap-2 mb-16">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-500">
+              <Zap className="h-5 w-5 text-white" />
+            </div>
+            <span className="text-xl font-black text-white">TuCanchera</span>
+          </Link>
+
+          <h2 className="text-3xl font-black text-white leading-tight">{tagline}</h2>
+
+          <ul className="mt-8 space-y-4">
+            {bullets.map((b, i) => (
+              <li key={i} className="flex items-center gap-3 text-white/70">
+                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary-500/20 text-primary-400">
+                  <Check className="h-3.5 w-3.5" />
+                </div>
+                <span className="text-sm">{b}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <p className="relative text-xs text-white/30">© {new Date().getFullYear()} TuCanchera</p>
+      </div>
+
+      {/* Panel derecho */}
+      <div className="flex flex-1 items-center justify-center px-6 py-12 bg-white">
+        <div className="w-full max-w-sm">
+          <h1 className="text-2xl font-black text-neutral-900">Bienvenido</h1>
+          <p className="mt-1 text-sm text-neutral-500">Iniciá sesión para continuar</p>
+
           {successMessage && (
-            <p className="mb-4 rounded-md bg-primary-50 p-3 text-sm text-primary-700">
+            <p className="mt-6 rounded-lg bg-green-50 px-4 py-3 text-sm text-green-700">
               {successMessage}
             </p>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="mt-8 space-y-5">
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <Input
@@ -92,6 +130,7 @@ export default function Login() {
                 required
                 autoComplete="email"
                 disabled={isLoading}
+                className="rounded-lg"
               />
             </div>
 
@@ -114,16 +153,17 @@ export default function Login() {
                 required
                 autoComplete="current-password"
                 disabled={isLoading}
+                className="rounded-lg"
               />
             </div>
 
             {error && (
-              <p className="text-sm text-destructive">{error}</p>
+              <p className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
             )}
 
             <Button
               type="submit"
-              className="w-full"
+              className="w-full rounded-lg"
               size="lg"
               disabled={isLoading}
             >
@@ -131,7 +171,7 @@ export default function Login() {
             </Button>
           </form>
 
-          <div className="mt-6 text-center text-sm text-muted-foreground">
+          <div className="mt-6 text-center text-sm text-neutral-500">
             <p>
               ¿No tenés cuenta?{' '}
               <Link to="/register" className="font-medium text-primary-600 hover:underline">
@@ -145,8 +185,8 @@ export default function Login() {
               </Link>
             </p>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   )
 }

@@ -14,6 +14,10 @@ import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { tipoCanchaLabels } from '@/utils/canchaLabels'
+import { Lock, Unlock, Ban } from 'lucide-react'
+
+const selectClass =
+  'mt-1 w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500'
 
 export default function Bloqueos() {
   const { data: complejo } = useMiComplejo()
@@ -59,12 +63,11 @@ export default function Bloqueos() {
     }
 
     if (estado === 'bloqueado') {
-      // Desbloquear
       const bloqueo = bloqueos?.find((b) => b.hora_inicio.slice(0, 5) === horaInicio)
       if (!bloqueo) return
       try {
         await eliminarBloqueo(bloqueo.id)
-        toast.success('Desbloqueado')
+        toast.success('Turno desbloqueado')
         await invalidar()
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Error')
@@ -81,104 +84,172 @@ export default function Bloqueos() {
         horaInicio,
         motivo: motivo || null,
       })
-      toast.success('Slot bloqueado')
+      toast.success('Turno bloqueado')
       await invalidar()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Error')
     }
   }
 
+  const libresCount = slots?.filter((s) => s.estado === 'libre').length ?? 0
+  const bloqueadosCount = slots?.filter((s) => s.estado === 'bloqueado').length ?? 0
+  const ocupadosCount = slots?.filter((s) => s.estado === 'ocupado').length ?? 0
+
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-neutral-900">Bloqueos de turnos</h1>
-        <p className="text-sm text-neutral-500">
-          Bloqueá turnos específicos (mantenimiento, eventos, etc.).
+        <h1 className="text-2xl font-black text-neutral-900">Bloqueos de turnos</h1>
+        <p className="mt-0.5 text-sm text-neutral-500">
+          Bloqueá turnos específicos para mantenimiento, eventos u otros motivos.
         </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div>
-          <Label htmlFor="cancha">Cancha</Label>
-          <select
-            id="cancha"
-            value={canchaId}
-            onChange={(e) => setCanchaId(e.target.value)}
-            className="mt-1 w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm"
-          >
-            {canchas?.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.nombre} — {tipoCanchaLabels[c.tipo]}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <Label htmlFor="fecha">Fecha</Label>
-          <Input
-            id="fecha"
-            type="date"
-            value={fecha}
-            onChange={(e) => setFecha(e.target.value)}
-          />
-        </div>
-      </div>
-
-      <div className="rounded-xl border border-neutral-200 bg-white p-4">
-        {loadingSlots ? (
-          <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
-            {Array.from({ length: 12 }).map((_, i) => (
-              <Skeleton key={i} className="h-10" />
-            ))}
+      {/* Selectores */}
+      <div className="overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm">
+        <div className="grid gap-4 p-5 sm:grid-cols-2">
+          <div>
+            <Label htmlFor="cancha" className="text-xs font-semibold text-neutral-600">
+              Cancha
+            </Label>
+            <select
+              id="cancha"
+              value={canchaId}
+              onChange={(e) => setCanchaId(e.target.value)}
+              className={selectClass}
+            >
+              {canchas?.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.nombre} — {tipoCanchaLabels[c.tipo]}
+                </option>
+              ))}
+            </select>
           </div>
-        ) : !slots || slots.length === 0 ? (
-          <p className="py-8 text-center text-sm text-neutral-500">
-            Sin horarios para este día.
-          </p>
-        ) : (
-          <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
-            {slots.map((s) => {
-              const b =
-                bloqueos?.find((x) => x.hora_inicio.slice(0, 5) === s.horaInicio)
+          <div>
+            <Label htmlFor="fecha" className="text-xs font-semibold text-neutral-600">
+              Fecha
+            </Label>
+            <Input
+              id="fecha"
+              type="date"
+              value={fecha}
+              onChange={(e) => setFecha(e.target.value)}
+              className="mt-1 rounded-lg"
+            />
+          </div>
+        </div>
 
-              let cls = 'bg-green-100 text-green-700 hover:bg-green-200'
-              let titulo = 'Click para bloquear'
-              if (s.estado === 'ocupado') {
-                cls = 'bg-red-100 text-red-700 cursor-not-allowed'
-                titulo = 'Reservado'
-              } else if (s.estado === 'bloqueado') {
-                cls = 'bg-neutral-300 text-neutral-700 hover:bg-neutral-400'
-                titulo = b?.motivo
-                  ? `Bloqueado: ${b.motivo}. Click para desbloquear.`
-                  : 'Click para desbloquear'
-              }
-
-              return (
-                <button
-                  key={s.horaInicio}
-                  type="button"
-                  title={titulo}
-                  disabled={s.estado === 'ocupado'}
-                  onClick={() => handleSlotClick(s.horaInicio, s.estado)}
-                  className={`rounded-md px-2 py-2 text-sm font-medium transition-colors ${cls}`}
-                >
-                  {s.horaInicio}
-                </button>
-              )
-            })}
+        {/* Counters */}
+        {slots && slots.length > 0 && (
+          <div className="flex gap-4 border-t border-neutral-100 bg-neutral-50 px-5 py-3">
+            <div className="flex items-center gap-1.5 text-xs text-neutral-600">
+              <span className="inline-block h-2.5 w-2.5 rounded-sm bg-primary-400" />
+              {libresCount} libre{libresCount !== 1 ? 's' : ''}
+            </div>
+            <div className="flex items-center gap-1.5 text-xs text-neutral-600">
+              <span className="inline-block h-2.5 w-2.5 rounded-sm bg-neutral-300" />
+              {bloqueadosCount} bloqueado{bloqueadosCount !== 1 ? 's' : ''}
+            </div>
+            <div className="flex items-center gap-1.5 text-xs text-neutral-600">
+              <span className="inline-block h-2.5 w-2.5 rounded-sm bg-neutral-200" />
+              {ocupadosCount} reservado{ocupadosCount !== 1 ? 's' : ''}
+            </div>
           </div>
         )}
       </div>
 
-      <div className="flex gap-4 text-xs text-neutral-500">
+      {/* Grid de slots */}
+      <div className="overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm">
+        {loadingSlots ? (
+          <div className="grid grid-cols-4 gap-2 p-5 sm:grid-cols-6">
+            {Array.from({ length: 12 }).map((_, i) => (
+              <Skeleton key={i} className="h-12 rounded-xl" />
+            ))}
+          </div>
+        ) : !slots || slots.length === 0 ? (
+          <div className="py-12 text-center">
+            <Ban className="mx-auto h-8 w-8 text-neutral-300" />
+            <p className="mt-2 text-sm font-medium text-neutral-500">
+              Sin horarios para este día.
+            </p>
+            <p className="mt-1 text-xs text-neutral-400">
+              Verificá que la cancha tenga horario configurado para este día de la semana.
+            </p>
+          </div>
+        ) : (
+          <div className="p-5">
+            <p className="mb-4 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+              Turnos del día — click para bloquear / desbloquear
+            </p>
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6">
+              {slots.map((s) => {
+                const b = bloqueos?.find((x) => x.hora_inicio.slice(0, 5) === s.horaInicio)
+
+                if (s.estado === 'ocupado') {
+                  return (
+                    <div
+                      key={s.horaInicio}
+                      title="Reservado — no se puede bloquear"
+                      className="flex flex-col items-center justify-center rounded-xl bg-neutral-100 px-2 py-2.5 cursor-not-allowed"
+                    >
+                      <span className="text-sm font-semibold text-neutral-400">{s.horaInicio}</span>
+                      <span className="mt-0.5 text-[9px] font-medium uppercase text-neutral-400">Reservado</span>
+                    </div>
+                  )
+                }
+
+                if (s.estado === 'bloqueado') {
+                  return (
+                    <button
+                      key={s.horaInicio}
+                      type="button"
+                      title={b?.motivo ? `Bloqueado: ${b.motivo} · Click para desbloquear` : 'Click para desbloquear'}
+                      onClick={() => handleSlotClick(s.horaInicio, s.estado)}
+                      className="flex flex-col items-center justify-center rounded-xl border border-amber-200 bg-amber-50 px-2 py-2.5 transition-colors hover:bg-amber-100"
+                    >
+                      <Lock className="h-3 w-3 text-amber-500" />
+                      <span className="mt-0.5 text-sm font-semibold text-amber-700">{s.horaInicio}</span>
+                      {b?.motivo && (
+                        <span className="mt-0.5 max-w-full truncate text-[9px] font-medium text-amber-500">
+                          {b.motivo}
+                        </span>
+                      )}
+                    </button>
+                  )
+                }
+
+                // Libre
+                return (
+                  <button
+                    key={s.horaInicio}
+                    type="button"
+                    title="Click para bloquear"
+                    onClick={() => handleSlotClick(s.horaInicio, s.estado)}
+                    className="flex flex-col items-center justify-center rounded-xl border border-primary-200 bg-primary-50 px-2 py-2.5 transition-colors hover:bg-neutral-100"
+                  >
+                    <Unlock className="h-3 w-3 text-primary-400" />
+                    <span className="mt-0.5 text-sm font-semibold text-primary-700">{s.horaInicio}</span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Leyenda */}
+      <div className="flex flex-wrap gap-4 rounded-xl border border-neutral-200 bg-white px-4 py-3 text-xs text-neutral-600 shadow-sm">
         <div className="flex items-center gap-1.5">
-          <span className="inline-block h-3 w-3 rounded-sm bg-green-500" /> Libre
+          <span className="inline-block h-3 w-3 rounded-sm bg-primary-400" />
+          Libre — click para bloquear
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="inline-block h-3 w-3 rounded-sm bg-red-500" /> Reservado
+          <span className="inline-block h-3 w-3 rounded-sm bg-amber-300" />
+          Bloqueado — click para desbloquear
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="inline-block h-3 w-3 rounded-sm bg-neutral-400" /> Bloqueado
+          <span className="inline-block h-3 w-3 rounded-sm bg-neutral-300" />
+          Reservado — no modificable
         </div>
       </div>
     </div>

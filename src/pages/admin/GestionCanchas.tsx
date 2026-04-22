@@ -22,10 +22,13 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Badge } from '@/components/ui/badge'
-import { Plus, Trash2, ChevronDown, ChevronUp } from 'lucide-react'
+import { Plus, Trash2, ChevronDown, ChevronUp, LandPlot, Clock, DollarSign, Save } from 'lucide-react'
 import type { Cancha, HorarioCancha, TipoCancha } from '@/types'
 
 const DIAS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
+
+const selectClass =
+  'mt-1 w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500'
 
 export default function GestionCanchas() {
   const queryClient = useQueryClient()
@@ -63,19 +66,34 @@ export default function GestionCanchas() {
     }
   }
 
-  if (isLoading) return <Skeleton className="h-96 w-full" />
+  if (isLoading) {
+    return (
+      <div className="space-y-4">
+        <div>
+          <Skeleton className="h-8 w-32" />
+          <Skeleton className="mt-1 h-4 w-64" />
+        </div>
+        {[1, 2, 3].map((i) => (
+          <Skeleton key={i} className="h-20 w-full rounded-2xl" />
+        ))}
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-neutral-900">Canchas</h1>
-          <p className="text-sm text-neutral-500">
+          <h1 className="text-2xl font-black text-neutral-900">Canchas</h1>
+          <p className="mt-0.5 text-sm text-neutral-500">
             Tipo, precio, duración y horarios de cada cancha.
           </p>
         </div>
-        <Button onClick={() => setMostrarNueva((v) => !v)}>
-          <Plus className="mr-2 h-4 w-4" />
+        <Button
+          onClick={() => setMostrarNueva((v) => !v)}
+          className="flex items-center gap-1.5"
+        >
+          <Plus className="h-4 w-4" />
           Nueva cancha
         </Button>
       </div>
@@ -89,8 +107,14 @@ export default function GestionCanchas() {
       )}
 
       {!canchas || canchas.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-neutral-300 bg-white p-10 text-center text-sm text-neutral-500">
-          Todavía no tenés canchas cargadas.
+        <div className="rounded-2xl border border-dashed border-neutral-300 bg-white p-12 text-center shadow-sm">
+          <LandPlot className="mx-auto h-8 w-8 text-neutral-300" />
+          <p className="mt-3 text-sm font-medium text-neutral-500">
+            Todavía no tenés canchas cargadas.
+          </p>
+          <p className="mt-1 text-xs text-neutral-400">
+            Hacé click en "Nueva cancha" para empezar.
+          </p>
         </div>
       ) : (
         <ul className="space-y-3">
@@ -140,19 +164,26 @@ function CanchaCard({
   }
 
   return (
-    <li className="rounded-xl border border-neutral-200 bg-white">
-      <div className="flex flex-wrap items-center gap-3 p-4">
-        <Badge variant="secondary">{tipoCanchaLabels[cancha.tipo]}</Badge>
+    <li className="overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm">
+      <div className="flex flex-wrap items-center gap-3 px-5 py-4">
+        {/* Badge tipo */}
+        <Badge variant="secondary" className="shrink-0">
+          {tipoCanchaLabels[cancha.tipo]}
+        </Badge>
+
+        {/* Nombre editable */}
         <Input
           value={nombre}
           onChange={(e) => {
             setNombre(e.target.value)
             setDirty(true)
           }}
-          className="max-w-xs"
+          className="max-w-xs rounded-lg"
         />
-        <div className="flex items-center gap-1">
-          <span className="text-sm text-neutral-500">$</span>
+
+        {/* Precio editable */}
+        <div className="flex items-center gap-1.5">
+          <DollarSign className="h-4 w-4 text-neutral-400" />
           <Input
             type="number"
             value={precio}
@@ -160,42 +191,69 @@ function CanchaCard({
               setPrecio(e.target.value)
               setDirty(true)
             }}
-            className="w-28"
+            className="w-28 rounded-lg"
           />
         </div>
-        <span className="text-xs text-neutral-500">
-          {cancha.duracion_min} min
-        </span>
 
+        {/* Duración */}
+        <div className="flex items-center gap-1 text-xs text-neutral-500">
+          <Clock className="h-3.5 w-3.5" />
+          {cancha.duracion_min} min
+        </div>
+
+        {/* Toggle activa */}
         <label className="ml-auto flex cursor-pointer items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={cancha.activa}
-            onChange={onToggle}
-            className="h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-500"
-          />
-          <span>Activa</span>
+          <div
+            className={`relative inline-flex h-5 w-9 cursor-pointer items-center rounded-full transition-colors ${
+              cancha.activa ? 'bg-primary-600' : 'bg-neutral-200'
+            }`}
+            onClick={onToggle}
+          >
+            <span
+              className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-sm transition-transform ${
+                cancha.activa ? 'translate-x-4' : 'translate-x-0.5'
+              }`}
+            />
+          </div>
+          <span className={`text-xs font-medium ${cancha.activa ? 'text-emerald-600' : 'text-neutral-400'}`}>
+            {cancha.activa ? 'Activa' : 'Inactiva'}
+          </span>
         </label>
 
+        {/* Guardar si hay cambios */}
         {dirty && (
-          <Button size="sm" onClick={guardar}>
+          <Button size="sm" onClick={guardar} className="flex items-center gap-1.5">
+            <Save className="h-3.5 w-3.5" />
             Guardar
           </Button>
         )}
-        <Button
-          variant="ghost"
-          size="sm"
+
+        {/* Expandir horarios */}
+        <button
+          type="button"
           onClick={() => setExpanded((v) => !v)}
+          className="flex items-center gap-1 rounded-lg border border-neutral-200 px-2.5 py-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-50 transition-colors"
         >
           {expanded ? (
-            <ChevronUp className="h-4 w-4" />
+            <>
+              <ChevronUp className="h-3.5 w-3.5" /> Ocultar
+            </>
           ) : (
-            <ChevronDown className="h-4 w-4" />
+            <>
+              <ChevronDown className="h-3.5 w-3.5" /> Horarios
+            </>
           )}
-        </Button>
-        <Button variant="ghost" size="sm" onClick={onDelete}>
-          <Trash2 className="h-4 w-4 text-red-500" />
-        </Button>
+        </button>
+
+        {/* Eliminar */}
+        <button
+          type="button"
+          onClick={onDelete}
+          className="flex h-8 w-8 items-center justify-center rounded-lg border border-red-100 text-red-400 hover:border-red-200 hover:bg-red-50 hover:text-red-600 transition-colors"
+          title="Eliminar cancha"
+        >
+          <Trash2 className="h-4 w-4" />
+        </button>
       </div>
 
       {expanded && <HorariosEditor canchaId={cancha.id} />}
@@ -209,7 +267,6 @@ function HorariosEditor({ canchaId }: { canchaId: string }) {
     queryFn: () => fetchHorariosByCancha(canchaId),
   })
 
-  // Estado local: un Map<diaSemana, {inicio, fin, habilitado}>
   const [horarios, setHorariosState] = useState<
     Record<number, { inicio: string; fin: string; habilitado: boolean }>
   >({})
@@ -255,17 +312,23 @@ function HorariosEditor({ canchaId }: { canchaId: string }) {
     }
   }
 
-  if (isLoading) return <div className="p-4"><Skeleton className="h-40" /></div>
+  if (isLoading) {
+    return (
+      <div className="border-t border-neutral-100 p-5">
+        <Skeleton className="h-40 w-full rounded-xl" />
+      </div>
+    )
+  }
 
   return (
-    <div className="border-t border-neutral-200 p-4">
-      <h4 className="mb-3 text-sm font-semibold text-neutral-700">
+    <div className="border-t border-neutral-100 bg-neutral-50 px-5 py-4">
+      <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-neutral-500">
         Horarios de funcionamiento
       </h4>
       <div className="space-y-2">
         {DIAS.map((label, i) => (
-          <div key={i} className="flex items-center gap-3 text-sm">
-            <label className="flex w-24 items-center gap-2">
+          <div key={i} className="flex items-center gap-3">
+            <label className="flex w-20 cursor-pointer items-center gap-2">
               <input
                 type="checkbox"
                 checked={horarios[i]?.habilitado ?? false}
@@ -275,9 +338,11 @@ function HorariosEditor({ canchaId }: { canchaId: string }) {
                     [i]: { ...prev[i], habilitado: e.target.checked },
                   }))
                 }
-                className="h-4 w-4 rounded border-neutral-300 text-primary-600"
+                className="h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-500"
               />
-              {label}
+              <span className={`text-sm ${horarios[i]?.habilitado ? 'font-medium text-neutral-900' : 'text-neutral-400'}`}>
+                {label}
+              </span>
             </label>
             <Input
               type="time"
@@ -289,7 +354,7 @@ function HorariosEditor({ canchaId }: { canchaId: string }) {
                 }))
               }
               disabled={!horarios[i]?.habilitado}
-              className="w-32"
+              className="w-28 rounded-lg disabled:opacity-40"
             />
             <span className="text-neutral-400">—</span>
             <Input
@@ -302,7 +367,7 @@ function HorariosEditor({ canchaId }: { canchaId: string }) {
                 }))
               }
               disabled={!horarios[i]?.habilitado}
-              className="w-32"
+              className="w-28 rounded-lg disabled:opacity-40"
             />
           </div>
         ))}
@@ -333,7 +398,6 @@ function NuevaCanchaForm({
     e.preventDefault()
     setCreando(true)
     try {
-      // Por defecto: 09-23 todos los días
       const horarios = Array.from({ length: 7 }, (_, i) => ({
         dia_semana: i,
         hora_inicio: '09:00',
@@ -360,17 +424,21 @@ function NuevaCanchaForm({
   return (
     <form
       onSubmit={submit}
-      className="rounded-xl border border-neutral-200 bg-white p-6"
+      className="overflow-hidden rounded-2xl border border-primary-200 bg-white shadow-sm"
     >
-      <h2 className="mb-4 font-semibold text-neutral-900">Nueva cancha</h2>
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="flex items-center gap-2.5 border-b border-neutral-100 bg-primary-50 px-5 py-4">
+        <Plus className="h-4 w-4 text-primary-600" />
+        <h2 className="text-sm font-semibold text-primary-700">Nueva cancha</h2>
+      </div>
+
+      <div className="grid gap-4 p-5 sm:grid-cols-2">
         <div>
-          <Label htmlFor="tipo">Tipo</Label>
+          <Label htmlFor="tipo" className="text-xs font-semibold text-neutral-600">Tipo</Label>
           <select
             id="tipo"
             value={tipo}
             onChange={(e) => setTipo(e.target.value as TipoCancha)}
-            className="mt-1 w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm"
+            className={selectClass}
           >
             <option value="futbol5">Fútbol 5</option>
             <option value="futbol7">Fútbol 7</option>
@@ -378,49 +446,55 @@ function NuevaCanchaForm({
           </select>
         </div>
         <div>
-          <Label htmlFor="nombre">Nombre</Label>
+          <Label htmlFor="nombre-nueva" className="text-xs font-semibold text-neutral-600">Nombre</Label>
           <Input
-            id="nombre"
+            id="nombre-nueva"
             value={nombre}
             onChange={(e) => setNombre(e.target.value)}
             required
+            className="mt-1 rounded-lg"
+            placeholder="Ej: Cancha 1"
           />
         </div>
         <div>
-          <Label htmlFor="precio">Precio ($)</Label>
+          <Label htmlFor="precio-nueva" className="text-xs font-semibold text-neutral-600">Precio ($)</Label>
           <Input
-            id="precio"
+            id="precio-nueva"
             type="number"
             min="0"
             value={precio}
             onChange={(e) => setPrecio(e.target.value)}
             required
+            className="mt-1 rounded-lg"
+            placeholder="5000"
           />
         </div>
         <div>
-          <Label htmlFor="duracion">Duración</Label>
+          <Label htmlFor="duracion-nueva" className="text-xs font-semibold text-neutral-600">Duración del turno</Label>
           <select
-            id="duracion"
+            id="duracion-nueva"
             value={duracion}
             onChange={(e) => setDuracion(Number(e.target.value) as 60 | 90)}
-            className="mt-1 w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm"
+            className={selectClass}
           >
             <option value={60}>60 minutos</option>
             <option value={90}>90 minutos</option>
           </select>
         </div>
       </div>
-      <p className="mt-3 text-xs text-neutral-500">
-        Se crea con horario por defecto 09:00 a 23:00 todos los días. Podés
-        ajustarlo después.
-      </p>
-      <div className="mt-4 flex gap-2">
-        <Button type="submit" disabled={creando}>
-          {creando ? 'Creando…' : 'Crear cancha'}
-        </Button>
-        <Button type="button" variant="outline" onClick={onClose}>
-          Cancelar
-        </Button>
+
+      <div className="border-t border-neutral-100 bg-neutral-50 px-5 py-3">
+        <p className="mb-3 text-xs text-neutral-500">
+          Se crea con horario por defecto 09:00–23:00 todos los días. Podés ajustarlo después.
+        </p>
+        <div className="flex gap-2">
+          <Button type="submit" size="sm" disabled={creando}>
+            {creando ? 'Creando…' : 'Crear cancha'}
+          </Button>
+          <Button type="button" size="sm" variant="outline" onClick={onClose}>
+            Cancelar
+          </Button>
+        </div>
       </div>
     </form>
   )

@@ -10,7 +10,10 @@ import { crearComplejo, slugify, slugDisponible } from '@/services/adminService'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Building2, Sparkles } from 'lucide-react'
+import { Building2, Sparkles, CheckCircle2, MapPin, FileText, Link2 } from 'lucide-react'
+
+const textareaClass =
+  'mt-1 w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm shadow-sm placeholder:text-neutral-400 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500'
 
 export default function OnboardingWizard() {
   const { profile } = useAuth()
@@ -24,7 +27,6 @@ export default function OnboardingWizard() {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
-  // Auto-generar slug desde nombre mientras no lo edite el usuario
   useEffect(() => {
     if (!slugEditadoManual) {
       setSlug(slugify(nombre))
@@ -52,7 +54,6 @@ export default function OnboardingWizard() {
 
     setLoading(true)
     try {
-      // Validar que el slug esté disponible
       const disponible = await slugDisponible(slug)
       if (!disponible) {
         setError(
@@ -86,106 +87,152 @@ export default function OnboardingWizard() {
   return (
     <div className="mx-auto max-w-2xl">
       {/* Hero */}
-      <div className="mb-8 rounded-2xl border border-primary-100 bg-gradient-to-br from-primary-50 to-white p-8 text-center">
-        <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-primary-100">
-          <Sparkles className="h-7 w-7 text-primary-600" />
+      <div className="mb-6 overflow-hidden rounded-2xl border border-primary-100 bg-gradient-to-br from-primary-50 via-white to-white p-8 text-center shadow-sm">
+        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary-600 shadow-sm">
+          <Sparkles className="h-7 w-7 text-white" />
         </div>
-        <h1 className="text-2xl font-bold text-neutral-900">
+        <h1 className="text-2xl font-black text-neutral-900">
           ¡Bienvenido a TuCanchera!
         </h1>
-        <p className="mt-2 text-neutral-600">
+        <p className="mt-2 text-sm text-neutral-600">
           Para empezar, contanos sobre tu complejo deportivo. Después vas a poder
-          cargar tus canchas, horarios y empezar a recibir reservas.
+          cargar tus canchas, horarios y empezar a recibir reservas en minutos.
         </p>
+
+        {/* Pasos visuales */}
+        <div className="mt-6 flex items-center justify-center gap-2">
+          {[
+            { icon: Building2, label: 'Complejo' },
+            { icon: CheckCircle2, label: 'Canchas' },
+            { icon: CheckCircle2, label: 'Listo' },
+          ].map((step, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <div
+                className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold ${
+                  i === 0
+                    ? 'bg-primary-600 text-white'
+                    : 'bg-neutral-200 text-neutral-500'
+                }`}
+              >
+                {i + 1}
+              </div>
+              <span
+                className={`text-xs font-medium ${
+                  i === 0 ? 'text-primary-700' : 'text-neutral-400'
+                }`}
+              >
+                {step.label}
+              </span>
+              {i < 2 && <div className="h-px w-6 bg-neutral-200" />}
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Formulario */}
-      <form
-        onSubmit={handleSubmit}
-        className="space-y-5 rounded-xl border border-neutral-200 bg-white p-6 shadow-sm"
-      >
-        <div className="flex items-center gap-2 border-b border-neutral-100 pb-4">
-          <Building2 className="h-5 w-5 text-primary-600" />
-          <h2 className="font-semibold text-neutral-900">Datos del complejo</h2>
+      <form onSubmit={handleSubmit} className="overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm">
+        {/* Section header */}
+        <div className="flex items-center gap-2.5 border-b border-neutral-100 bg-neutral-50 px-5 py-4">
+          <Building2 className="h-4 w-4 text-neutral-500" />
+          <h2 className="text-sm font-semibold text-neutral-800">Datos del complejo</h2>
         </div>
 
-        <div className="space-y-1.5">
-          <Label htmlFor="nombre">
-            Nombre del complejo <span className="text-destructive">*</span>
-          </Label>
-          <Input
-            id="nombre"
-            placeholder="Ej: Club Deportivo Central"
-            value={nombre}
-            onChange={(e) => setNombre(e.target.value)}
-            required
-            minLength={3}
-          />
-        </div>
-
-        <div className="space-y-1.5">
-          <Label htmlFor="slug">
-            URL pública <span className="text-destructive">*</span>
-          </Label>
-          <div className="flex items-center rounded-md border border-neutral-300 bg-neutral-50 focus-within:border-primary-500 focus-within:ring-1 focus-within:ring-primary-500">
-            <span className="select-none border-r border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-500">
-              tucanchera.com/
-            </span>
-            <input
-              id="slug"
-              value={slug}
-              onChange={handleSlugChange}
+        <div className="space-y-5 p-5">
+          {/* Nombre */}
+          <div>
+            <Label htmlFor="nombre" className="flex items-center gap-1.5 text-xs font-semibold text-neutral-600">
+              <Building2 className="h-3.5 w-3.5" />
+              Nombre del complejo <span className="text-red-500">*</span>
+            </Label>
+            <Input
+              id="nombre"
+              placeholder="Ej: Club Deportivo Central"
+              value={nombre}
+              onChange={(e) => setNombre(e.target.value)}
               required
               minLength={3}
-              placeholder="mi-complejo"
-              className="flex-1 bg-transparent px-3 py-2 text-sm focus:outline-none"
+              className="mt-1 rounded-lg"
             />
           </div>
-          <p className="text-xs text-neutral-500">
-            Esta va a ser tu URL pública. Solo letras, números y guiones.
+
+          {/* URL pública */}
+          <div>
+            <Label htmlFor="slug" className="flex items-center gap-1.5 text-xs font-semibold text-neutral-600">
+              <Link2 className="h-3.5 w-3.5" />
+              URL pública <span className="text-red-500">*</span>
+            </Label>
+            <div className="mt-1 flex items-stretch overflow-hidden rounded-lg border border-neutral-200 bg-neutral-50 focus-within:border-primary-500 focus-within:ring-1 focus-within:ring-primary-500">
+              <span className="flex items-center border-r border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-400 select-none">
+                tucanchera.com/
+              </span>
+              <input
+                id="slug"
+                value={slug}
+                onChange={handleSlugChange}
+                required
+                minLength={3}
+                placeholder="mi-complejo"
+                className="min-w-0 flex-1 bg-transparent px-3 py-2 text-sm font-medium text-neutral-900 focus:outline-none"
+              />
+            </div>
+            <p className="mt-1 text-xs text-neutral-500">
+              Esta será tu URL pública. Solo letras minúsculas, números y guiones.
+            </p>
+          </div>
+
+          {/* Dirección */}
+          <div>
+            <Label htmlFor="direccion" className="flex items-center gap-1.5 text-xs font-semibold text-neutral-600">
+              <MapPin className="h-3.5 w-3.5" />
+              Dirección <span className="text-neutral-400 font-normal">(opcional)</span>
+            </Label>
+            <Input
+              id="direccion"
+              placeholder="Av. Siempre Viva 742, CABA"
+              value={direccion}
+              onChange={(e) => setDireccion(e.target.value)}
+              className="mt-1 rounded-lg"
+            />
+          </div>
+
+          {/* Descripción */}
+          <div>
+            <Label htmlFor="descripcion" className="flex items-center gap-1.5 text-xs font-semibold text-neutral-600">
+              <FileText className="h-3.5 w-3.5" />
+              Descripción <span className="text-neutral-400 font-normal">(opcional)</span>
+            </Label>
+            <textarea
+              id="descripcion"
+              rows={3}
+              placeholder="Contá qué tipo de canchas tenés, servicios, ambiente…"
+              value={descripcion}
+              onChange={(e) => setDescripcion(e.target.value)}
+              className={textareaClass}
+            />
+          </div>
+
+          {/* Error */}
+          {error && (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {error}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="border-t border-neutral-100 bg-neutral-50 px-5 py-4">
+          <Button
+            type="submit"
+            className="w-full"
+            size="lg"
+            disabled={loading || nombre.length < 3 || slug.length < 3}
+          >
+            {loading ? 'Creando complejo…' : 'Crear complejo y continuar →'}
+          </Button>
+          <p className="mt-2 text-center text-xs text-neutral-500">
+            Después podrás editar toda esta información cuando quieras.
           </p>
         </div>
-
-        <div className="space-y-1.5">
-          <Label htmlFor="direccion">Dirección (opcional)</Label>
-          <Input
-            id="direccion"
-            placeholder="Av. Siempre Viva 742, CABA"
-            value={direccion}
-            onChange={(e) => setDireccion(e.target.value)}
-          />
-        </div>
-
-        <div className="space-y-1.5">
-          <Label htmlFor="descripcion">Descripción (opcional)</Label>
-          <textarea
-            id="descripcion"
-            rows={3}
-            placeholder="Contanos qué tipo de canchas tenés, servicios, horarios generales…"
-            value={descripcion}
-            onChange={(e) => setDescripcion(e.target.value)}
-            className="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-          />
-        </div>
-
-        {error && (
-          <div className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-            {error}
-          </div>
-        )}
-
-        <Button
-          type="submit"
-          size="lg"
-          className="w-full"
-          disabled={loading || nombre.length < 3 || slug.length < 3}
-        >
-          {loading ? 'Creando complejo…' : 'Crear complejo y continuar'}
-        </Button>
-
-        <p className="text-center text-xs text-neutral-500">
-          Después podrás editar toda esta información cuando quieras.
-        </p>
       </form>
     </div>
   )

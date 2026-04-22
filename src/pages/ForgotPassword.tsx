@@ -7,14 +7,7 @@ import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
-import { MailCheck } from 'lucide-react'
+import { MailCheck, Check, Zap } from 'lucide-react'
 
 export default function ForgotPassword() {
   const [email, setEmail] = useState('')
@@ -40,50 +33,136 @@ export default function ForgotPassword() {
     }
   }
 
+  const tagline = 'Reservá tu cancha al instante'
+  const bullets = [
+    'Disponibilidad en tiempo real',
+    'Pago online seguro',
+    'Confirmación instantánea'
+  ]
+
   if (sent) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-neutral-50 px-4">
-        <Card className="w-full max-w-md text-center">
-          <CardHeader>
-            <div className="mx-auto mb-2 flex h-14 w-14 items-center justify-center rounded-full bg-primary-50">
+      <div className="flex min-h-screen bg-white">
+        {/* Panel izquierdo - oculto en mobile */}
+        <div className="hidden lg:flex lg:w-[480px] shrink-0 flex-col justify-between bg-neutral-950 px-12 py-12 relative overflow-hidden">
+          {/* Grid pattern */}
+          <div
+            className="absolute inset-0 opacity-[0.04]"
+            style={{
+              backgroundImage: 'linear-gradient(var(--color-primary-400) 1px, transparent 1px), linear-gradient(90deg, var(--color-primary-400) 1px, transparent 1px)',
+              backgroundSize: '40px 40px'
+            }}
+          />
+
+          {/* Glow */}
+          <div className="absolute -top-32 -left-32 h-64 w-64 rounded-full bg-primary-600/20 blur-3xl" />
+
+          <div className="relative">
+            <Link to="/explorar" className="flex items-center gap-2 mb-16">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-500">
+                <Zap className="h-5 w-5 text-white" />
+              </div>
+              <span className="text-xl font-black text-white">TuCanchera</span>
+            </Link>
+
+            <h2 className="text-3xl font-black text-white leading-tight">{tagline}</h2>
+
+            <ul className="mt-8 space-y-4">
+              {bullets.map((b, i) => (
+                <li key={i} className="flex items-center gap-3 text-white/70">
+                  <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary-500/20 text-primary-400">
+                    <Check className="h-3.5 w-3.5" />
+                  </div>
+                  <span className="text-sm">{b}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <p className="relative text-xs text-white/30">© {new Date().getFullYear()} TuCanchera</p>
+        </div>
+
+        {/* Panel derecho */}
+        <div className="flex flex-1 items-center justify-center px-6 py-12 bg-white">
+          <div className="w-full max-w-sm text-center">
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-primary-50">
               <MailCheck className="h-7 w-7 text-primary-600" />
             </div>
-            <CardTitle className="text-xl font-bold text-primary-600">
+
+            <h1 className="text-2xl font-black text-neutral-900">
               Revisá tu email
-            </CardTitle>
-            <CardDescription>
+            </h1>
+            <p className="mt-2 text-sm text-neutral-500">
               Te enviamos un link para restablecer tu contraseña a{' '}
               <span className="font-medium text-neutral-700">{email}</span>.
               <br />
               Si no lo ves, revisá la carpeta de spam.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Link
-              to="/login"
-              className="text-sm font-medium text-primary-600 hover:underline"
-            >
-              Volver al inicio de sesión
-            </Link>
-          </CardContent>
-        </Card>
+            </p>
+
+            <div className="mt-6">
+              <Link
+                to="/login"
+                className="text-sm font-medium text-primary-600 hover:underline"
+              >
+                Volver al inicio de sesión
+              </Link>
+            </div>
+          </div>
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-neutral-50 px-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <CardTitle className="text-2xl font-bold text-primary-600">
-            Olvidé mi contraseña
-          </CardTitle>
-          <CardDescription>
+    <div className="flex min-h-screen bg-white">
+      {/* Panel izquierdo - oculto en mobile */}
+      <div className="hidden lg:flex lg:w-[480px] shrink-0 flex-col justify-between bg-neutral-950 px-12 py-12 relative overflow-hidden">
+        {/* Grid pattern */}
+        <div
+          className="absolute inset-0 opacity-[0.04]"
+          style={{
+            backgroundImage: 'linear-gradient(var(--color-primary-400) 1px, transparent 1px), linear-gradient(90deg, var(--color-primary-400) 1px, transparent 1px)',
+            backgroundSize: '40px 40px'
+          }}
+        />
+
+        {/* Glow */}
+        <div className="absolute -top-32 -left-32 h-64 w-64 rounded-full bg-primary-600/20 blur-3xl" />
+
+        <div className="relative">
+          <Link to="/explorar" className="flex items-center gap-2 mb-16">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-500">
+              <Zap className="h-5 w-5 text-white" />
+            </div>
+            <span className="text-xl font-black text-white">TuCanchera</span>
+          </Link>
+
+          <h2 className="text-3xl font-black text-white leading-tight">{tagline}</h2>
+
+          <ul className="mt-8 space-y-4">
+            {bullets.map((b, i) => (
+              <li key={i} className="flex items-center gap-3 text-white/70">
+                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary-500/20 text-primary-400">
+                  <Check className="h-3.5 w-3.5" />
+                </div>
+                <span className="text-sm">{b}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <p className="relative text-xs text-white/30">© {new Date().getFullYear()} TuCanchera</p>
+      </div>
+
+      {/* Panel derecho */}
+      <div className="flex flex-1 items-center justify-center px-6 py-12 bg-white">
+        <div className="w-full max-w-sm">
+          <h1 className="text-2xl font-black text-neutral-900">Olvidé mi contraseña</h1>
+          <p className="mt-1 text-sm text-neutral-500">
             Ingresá tu email y te mandamos un link para restablecerla.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
+          </p>
+
+          <form onSubmit={handleSubmit} className="mt-8 space-y-5">
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <Input
@@ -95,19 +174,20 @@ export default function ForgotPassword() {
                 required
                 autoComplete="email"
                 disabled={loading}
+                className="rounded-lg"
               />
             </div>
 
             {error && (
-              <p className="text-sm text-destructive">{error}</p>
+              <p className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
             )}
 
-            <Button type="submit" className="w-full" size="lg" disabled={loading}>
+            <Button type="submit" className="w-full rounded-lg" size="lg" disabled={loading}>
               {loading ? 'Enviando...' : 'Enviar link de recuperación'}
             </Button>
           </form>
 
-          <div className="mt-6 text-center text-sm text-muted-foreground">
+          <div className="mt-6 text-center text-sm text-neutral-500">
             <Link
               to="/login"
               className="font-medium text-primary-600 hover:underline"
@@ -115,8 +195,8 @@ export default function ForgotPassword() {
               ← Volver al inicio de sesión
             </Link>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   )
 }

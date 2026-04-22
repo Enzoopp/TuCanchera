@@ -21,15 +21,14 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog'
-import { CreditCard, MapPin, CheckCircle2 } from 'lucide-react'
+import { CreditCard, MapPin, CheckCircle2, Calendar, Clock, DollarSign } from 'lucide-react'
 import type { Cancha, Slot } from '@/types'
 
-// MP se habilita cuando la variable de entorno está activa
 const MP_HABILITADO = import.meta.env.VITE_MP_ENABLED === 'true'
 
 interface Props {
   cancha: Cancha
-  fecha: string // YYYY-MM-DD
+  fecha: string
   slot: Slot
   onClose: () => void
 }
@@ -105,21 +104,24 @@ export default function ConfirmacionReservaModal({
     return (
       <Dialog open onOpenChange={handleClose}>
         <DialogContent onClose={handleClose}>
-          <div className="flex flex-col items-center text-center">
-            <CheckCircle2 className="h-14 w-14 text-green-500" />
-            <DialogHeader className="mt-3">
-              <DialogTitle>¡Reserva confirmada!</DialogTitle>
-              <DialogDescription>
-                Te esperamos el {fecha} a las {slot.horaInicio}hs. Recordá pagar
-                al llegar al complejo.
+          <div className="flex flex-col items-center py-4 text-center">
+            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100">
+              <CheckCircle2 className="h-9 w-9 text-emerald-500" />
+            </div>
+            <DialogHeader className="mt-4">
+              <DialogTitle className="text-xl font-black">¡Reserva confirmada!</DialogTitle>
+              <DialogDescription className="mt-1.5 text-sm text-neutral-500">
+                Te esperamos el <strong className="text-neutral-800">{fecha}</strong> a las{' '}
+                <strong className="text-neutral-800">{slot.horaInicio}hs</strong>.
+                Recordá pagar al llegar al complejo.
               </DialogDescription>
             </DialogHeader>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={onClose}>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={onClose} className="flex-1">
               Cerrar
             </Button>
-            <Button onClick={() => navigate('/mis-reservas')}>
+            <Button onClick={() => navigate('/mis-reservas')} className="flex-1">
               Ver mis reservas
             </Button>
           </DialogFooter>
@@ -132,42 +134,55 @@ export default function ConfirmacionReservaModal({
     <Dialog open onOpenChange={handleClose}>
       <DialogContent onClose={handleClose}>
         <DialogHeader>
-          <DialogTitle>Confirmar reserva</DialogTitle>
+          <DialogTitle className="font-black">Confirmar reserva</DialogTitle>
           <DialogDescription>
             Revisá los detalles y elegí cómo pagar.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-4 text-sm">
-          <div className="flex justify-between py-1">
-            <span className="text-neutral-500">Cancha</span>
-            <span className="font-medium text-neutral-900">{cancha.nombre}</span>
+        {/* Resumen */}
+        <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-4">
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-sm">
+              <span className="flex items-center gap-1.5 text-neutral-500">
+                <MapPin className="h-3.5 w-3.5" /> Cancha
+              </span>
+              <span className="font-semibold text-neutral-900">{cancha.nombre}</span>
+            </div>
+            <div className="flex items-center justify-between text-sm">
+              <span className="flex items-center gap-1.5 text-neutral-500">
+                <Calendar className="h-3.5 w-3.5" /> Fecha
+              </span>
+              <span className="font-semibold text-neutral-900">{fecha}</span>
+            </div>
+            <div className="flex items-center justify-between text-sm">
+              <span className="flex items-center gap-1.5 text-neutral-500">
+                <Clock className="h-3.5 w-3.5" /> Horario
+              </span>
+              <span className="font-semibold text-neutral-900">
+                {slot.horaInicio} — {horaFin}
+              </span>
+            </div>
+            <div className="flex items-center justify-between text-sm">
+              <span className="flex items-center gap-1.5 text-neutral-500">
+                <Clock className="h-3.5 w-3.5" /> Duración
+              </span>
+              <span className="font-semibold text-neutral-900">{cancha.duracion_min} min</span>
+            </div>
           </div>
-          <div className="flex justify-between py-1">
-            <span className="text-neutral-500">Fecha</span>
-            <span className="font-medium text-neutral-900">{fecha}</span>
-          </div>
-          <div className="flex justify-between py-1">
-            <span className="text-neutral-500">Horario</span>
-            <span className="font-medium text-neutral-900">
-              {slot.horaInicio} — {horaFin}
+
+          <div className="mt-3 flex items-center justify-between border-t border-neutral-200 pt-3">
+            <span className="flex items-center gap-1.5 text-sm font-semibold text-neutral-700">
+              <DollarSign className="h-4 w-4" /> Total
             </span>
-          </div>
-          <div className="flex justify-between py-1">
-            <span className="text-neutral-500">Duración</span>
-            <span className="font-medium text-neutral-900">
-              {cancha.duracion_min} min
-            </span>
-          </div>
-          <div className="mt-2 flex justify-between border-t border-neutral-200 pt-2">
-            <span className="text-neutral-500">Total</span>
-            <span className="text-base font-bold text-neutral-900">
+            <span className="text-lg font-black text-neutral-900">
               ${cancha.precio.toLocaleString('es-AR')}
             </span>
           </div>
         </div>
 
-        <div className="mt-4 space-y-2">
+        {/* Opciones de pago */}
+        <div className="mt-2 space-y-2">
           {MP_HABILITADO && (
             <Button
               type="button"
@@ -187,14 +202,14 @@ export default function ConfirmacionReservaModal({
             disabled={procesando !== null}
           >
             <MapPin className="mr-2 h-4 w-4" />
-            {procesando === 'lugar' ? 'Reservando…' : 'Reservar (pagar en el lugar)'}
+            {procesando === 'lugar' ? 'Reservando…' : 'Reservar y pagar en el lugar'}
           </Button>
         </div>
 
-        <p className="mt-3 text-center text-xs text-neutral-500">
+        <p className="text-center text-xs text-neutral-400">
           {MP_HABILITADO
-            ? 'Si pagás en el lugar, la reserva queda confirmada al instante.'
-            : 'La reserva queda registrada. Abonás al llegar al complejo.'}
+            ? 'Al pagar en el lugar la reserva queda confirmada de inmediato.'
+            : 'La reserva queda registrada. Abonás cuando llegués al complejo.'}
         </p>
       </DialogContent>
     </Dialog>

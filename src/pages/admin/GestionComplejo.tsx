@@ -18,7 +18,10 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
-import { ImageIcon, Trash2, ArrowUp, ArrowDown, Upload } from 'lucide-react'
+import { ImageIcon, Trash2, ArrowUp, ArrowDown, Upload, Building2, Images } from 'lucide-react'
+
+const textareaClass =
+  'mt-1 w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm shadow-sm placeholder:text-neutral-400 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500'
 
 export default function GestionComplejo() {
   const queryClient = useQueryClient()
@@ -120,7 +123,16 @@ export default function GestionComplejo() {
   }
 
   if (isLoading) {
-    return <Skeleton className="h-96 w-full" />
+    return (
+      <div className="space-y-6">
+        <div>
+          <Skeleton className="h-8 w-40" />
+          <Skeleton className="mt-1 h-4 w-64" />
+        </div>
+        <Skeleton className="h-64 w-full rounded-2xl" />
+        <Skeleton className="h-40 w-full rounded-2xl" />
+      </div>
+    )
   }
 
   if (!complejo) {
@@ -128,61 +140,82 @@ export default function GestionComplejo() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
+      {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-neutral-900">Mi complejo</h1>
-        <p className="text-sm text-neutral-500">
+        <h1 className="text-2xl font-black text-neutral-900">Mi complejo</h1>
+        <p className="mt-0.5 text-sm text-neutral-500">
           Información visible para tus clientes.
         </p>
       </div>
 
-      {/* Datos */}
+      {/* Datos del complejo */}
       <form
         onSubmit={handleGuardar}
-        className="rounded-xl border border-neutral-200 bg-white p-6"
+        className="overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm"
       >
-        <h2 className="mb-4 font-semibold text-neutral-900">Datos</h2>
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="flex items-center gap-2.5 border-b border-neutral-100 bg-neutral-50 px-5 py-4">
+          <Building2 className="h-4 w-4 text-neutral-500" />
+          <h2 className="text-sm font-semibold text-neutral-800">Datos generales</h2>
+        </div>
+
+        <div className="grid gap-4 p-5 sm:grid-cols-2">
           <div className="sm:col-span-2">
-            <Label htmlFor="nombre">Nombre</Label>
+            <Label htmlFor="nombre" className="text-xs font-semibold text-neutral-600">
+              Nombre del complejo
+            </Label>
             <Input
               id="nombre"
               value={nombre}
               onChange={(e) => setNombre(e.target.value)}
               required
+              className="mt-1 rounded-lg"
+              placeholder="Ej: Club Deportivo Central"
             />
           </div>
           <div className="sm:col-span-2">
-            <Label htmlFor="direccion">Dirección</Label>
+            <Label htmlFor="direccion" className="text-xs font-semibold text-neutral-600">
+              Dirección
+            </Label>
             <Input
               id="direccion"
               value={direccion}
               onChange={(e) => setDireccion(e.target.value)}
+              className="mt-1 rounded-lg"
+              placeholder="Av. Siempre Viva 742, CABA"
             />
           </div>
           <div className="sm:col-span-2">
-            <Label htmlFor="descripcion">Descripción</Label>
+            <Label htmlFor="descripcion" className="text-xs font-semibold text-neutral-600">
+              Descripción
+            </Label>
             <textarea
               id="descripcion"
               rows={4}
               value={descripcion}
               onChange={(e) => setDescripcion(e.target.value)}
-              className="mt-1 w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+              className={textareaClass}
+              placeholder="Contá qué tipo de canchas tenés, servicios, ambiente…"
             />
           </div>
         </div>
-        <div className="mt-4">
-          <Button type="submit" disabled={guardando}>
+
+        <div className="border-t border-neutral-100 bg-neutral-50 px-5 py-3">
+          <Button type="submit" disabled={guardando} size="sm">
             {guardando ? 'Guardando…' : 'Guardar cambios'}
           </Button>
         </div>
       </form>
 
       {/* Logo */}
-      <div className="rounded-xl border border-neutral-200 bg-white p-6">
-        <h2 className="mb-4 font-semibold text-neutral-900">Logo</h2>
-        <div className="flex items-center gap-4">
-          <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-lg border border-neutral-200 bg-neutral-50">
+      <div className="overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm">
+        <div className="flex items-center gap-2.5 border-b border-neutral-100 bg-neutral-50 px-5 py-4">
+          <ImageIcon className="h-4 w-4 text-neutral-500" />
+          <h2 className="text-sm font-semibold text-neutral-800">Logo</h2>
+        </div>
+
+        <div className="flex items-center gap-5 p-5">
+          <div className="flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-neutral-200 bg-neutral-50">
             {complejo.logo_url ? (
               <img
                 src={complejo.logo_url}
@@ -193,27 +226,43 @@ export default function GestionComplejo() {
               <ImageIcon className="h-8 w-8 text-neutral-300" />
             )}
           </div>
-          <label className="cursor-pointer">
-            <input
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={handleLogo}
-              disabled={subiendoLogo}
-            />
-            <span className="inline-flex items-center gap-2 rounded-md border border-neutral-300 px-3 py-2 text-sm hover:bg-neutral-50">
-              <Upload className="h-4 w-4" />
+          <div>
+            <p className="text-sm font-medium text-neutral-800">
+              {complejo.logo_url ? 'Logo actual' : 'Sin logo'}
+            </p>
+            <p className="mt-0.5 text-xs text-neutral-500">
+              Recomendado: 200×200px, formato PNG o JPG
+            </p>
+            <label className="mt-3 inline-flex cursor-pointer items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 shadow-sm hover:bg-neutral-50 transition-colors">
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleLogo}
+                disabled={subiendoLogo}
+              />
+              <Upload className="h-3.5 w-3.5" />
               {subiendoLogo ? 'Subiendo…' : 'Cambiar logo'}
-            </span>
-          </label>
+            </label>
+          </div>
         </div>
       </div>
 
-      {/* Galería */}
-      <div className="rounded-xl border border-neutral-200 bg-white p-6">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="font-semibold text-neutral-900">Galería de fotos</h2>
-          <label className="cursor-pointer">
+      {/* Galería de fotos */}
+      <div className="overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm">
+        <div className="flex items-center justify-between border-b border-neutral-100 bg-neutral-50 px-5 py-4">
+          <div className="flex items-center gap-2.5">
+            <Images className="h-4 w-4 text-neutral-500" />
+            <h2 className="text-sm font-semibold text-neutral-800">
+              Galería de fotos
+              {fotos && fotos.length > 0 && (
+                <span className="ml-2 rounded-full bg-neutral-200 px-2 py-0.5 text-xs font-semibold text-neutral-600">
+                  {fotos.length}
+                </span>
+              )}
+            </h2>
+          </div>
+          <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 shadow-sm hover:bg-neutral-50 transition-colors">
             <input
               type="file"
               accept="image/*"
@@ -221,58 +270,72 @@ export default function GestionComplejo() {
               onChange={handleFoto}
               disabled={subiendoFoto}
             />
-            <span className="inline-flex items-center gap-2 rounded-md border border-neutral-300 px-3 py-2 text-sm hover:bg-neutral-50">
-              <Upload className="h-4 w-4" />
-              {subiendoFoto ? 'Subiendo…' : 'Agregar foto'}
-            </span>
+            <Upload className="h-3.5 w-3.5" />
+            {subiendoFoto ? 'Subiendo…' : 'Agregar foto'}
           </label>
         </div>
 
-        {!fotos || fotos.length === 0 ? (
-          <p className="py-8 text-center text-sm text-neutral-500">
-            Todavía no agregaste fotos.
-          </p>
-        ) : (
-          <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-            {fotos.map((f, idx) => (
-              <li
-                key={f.id}
-                className="group relative overflow-hidden rounded-lg border border-neutral-200"
-              >
-                <img
-                  src={f.url}
-                  alt=""
-                  className="aspect-square w-full object-cover"
-                />
-                <div className="absolute inset-x-0 bottom-0 flex justify-between bg-gradient-to-t from-black/70 to-transparent p-1.5 opacity-0 transition-opacity group-hover:opacity-100">
-                  <button
-                    type="button"
-                    onClick={() => handleMover(idx, -1)}
-                    disabled={idx === 0}
-                    className="rounded bg-white/90 p-1 text-neutral-700 hover:bg-white disabled:opacity-40"
-                  >
-                    <ArrowUp className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleMover(idx, 1)}
-                    disabled={idx === fotos.length - 1}
-                    className="rounded bg-white/90 p-1 text-neutral-700 hover:bg-white disabled:opacity-40"
-                  >
-                    <ArrowDown className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleEliminarFoto(f.id)}
-                    className="rounded bg-red-500 p-1 text-white hover:bg-red-600"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
+        <div className="p-5">
+          {!fotos || fotos.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-neutral-300 py-12 text-center">
+              <Images className="mx-auto h-8 w-8 text-neutral-300" />
+              <p className="mt-2 text-sm font-medium text-neutral-500">Sin fotos todavía</p>
+              <p className="mt-1 text-xs text-neutral-400">
+                Las fotos se muestran en la página pública de tu complejo.
+              </p>
+            </div>
+          ) : (
+            <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+              {fotos.map((f, idx) => (
+                <li
+                  key={f.id}
+                  className="group relative overflow-hidden rounded-xl border border-neutral-200"
+                >
+                  <img
+                    src={f.url}
+                    alt=""
+                    className="aspect-square w-full object-cover"
+                  />
+                  <div className="absolute inset-0 flex items-end justify-between bg-gradient-to-t from-black/70 via-black/20 to-transparent p-2 opacity-0 transition-opacity group-hover:opacity-100">
+                    <div className="flex gap-1">
+                      <button
+                        type="button"
+                        onClick={() => handleMover(idx, -1)}
+                        disabled={idx === 0}
+                        className="rounded-lg bg-white/90 p-1.5 text-neutral-700 hover:bg-white disabled:opacity-40 transition-colors"
+                        title="Mover arriba"
+                      >
+                        <ArrowUp className="h-3 w-3" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleMover(idx, 1)}
+                        disabled={idx === fotos.length - 1}
+                        className="rounded-lg bg-white/90 p-1.5 text-neutral-700 hover:bg-white disabled:opacity-40 transition-colors"
+                        title="Mover abajo"
+                      >
+                        <ArrowDown className="h-3 w-3" />
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleEliminarFoto(f.id)}
+                      className="rounded-lg bg-red-500 p-1.5 text-white hover:bg-red-600 transition-colors"
+                      title="Eliminar foto"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </div>
+                  {idx === 0 && (
+                    <div className="absolute left-2 top-2 rounded-md bg-primary-600 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                      Portada
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </div>
     </div>
   )
