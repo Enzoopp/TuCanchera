@@ -12,6 +12,7 @@ import { useFotos } from '@/hooks/useFotos'
 import { useSlots } from '@/hooks/useSlots'
 import ComplejoNoEncontrado from '@/pages/ComplejoNoEncontrado'
 import ConfirmacionReservaModal from '@/components/ConfirmacionReservaModal'
+import MapaComplejo from '@/components/MapaComplejo'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
@@ -406,6 +407,13 @@ export default function Complejo() {
           </div>
         )}
       </main>
+
+      {/* ── Ubicación ────────────────────────────────────────────────────── */}
+      {complejo.direccion && (
+        <section className="mx-auto max-w-6xl px-4 pb-10 sm:px-6 lg:px-8">
+          <MapaComplejo direccion={complejo.direccion} nombre={complejo.nombre} />
+        </section>
+      )}
 
       {/* ── Modal de confirmación ─────────────────────────────────────────── */}
       {slotSeleccionado && (

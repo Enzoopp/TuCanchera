@@ -30,6 +30,7 @@ interface AuthContextValue {
     metadata: { nombre: string; telefono?: string; rol: Rol },
     emailRedirectTo?: string
   ) => Promise<{ error: Error | null }>
+  signInWithGoogle: () => Promise<{ error: Error | null }>
   signOut: () => Promise<void>
 }
 
@@ -136,6 +137,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: error ? new Error(error.message) : null }
   }
 
+  async function signInWithGoogle() {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback`,
+        queryParams: {
+          // Forzar selección de cuenta siempre (útil si el usuario tiene varias cuentas Google)
+          prompt: 'select_account',
+        },
+      },
+    })
+    return { error: error ? new Error(error.message) : null }
+  }
+
   async function signOut() {
     await supabase.auth.signOut()
     setUser(null)
@@ -153,6 +168,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loading,
         signIn,
         signUp,
+        signInWithGoogle,
         signOut,
       }}
     >
