@@ -12,6 +12,7 @@ import {
   CalendarX,
   ClipboardList,
   BarChart3,
+  BookMarked,
   LogOut,
   ExternalLink,
   Zap,
@@ -25,6 +26,7 @@ const items = [
   { to: '/admin/bloqueos', label: 'Bloqueos', icon: CalendarX },
   { to: '/admin/reservas', label: 'Reservas', icon: ClipboardList },
   { to: '/admin/estadisticas', label: 'Estadísticas', icon: BarChart3 },
+  { to: '/admin/resumenes', label: 'Resúmenes', icon: BookMarked },
 ]
 
 export default function AdminLayout() {
@@ -161,12 +163,4 @@ export default function AdminLayout() {
         </nav>
 
         {/* Page content */}
-        <main className="flex-1 overflow-auto">
-          <div className="mx-auto max-w-6xl p-4 sm:p-6 lg:p-8">
-            <Outlet />
-          </div>
-        </main>
-      </div>
-    </div>
-  )
-}
+        <main className="flex-1 ove

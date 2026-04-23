@@ -43,11 +43,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
 
   // Fetch del perfil desde la tabla profiles
+  // IMPORTANTE: usa user_id (FK a auth.users) y no id (PK interna)
   async function fetchProfile(userId: string) {
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
-      .eq('id', userId)
+      .eq('user_id', userId)
       .single()
 
     if (error) {

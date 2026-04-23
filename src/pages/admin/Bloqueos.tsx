@@ -1,6 +1,7 @@
 // SRP: El admin bloquea/desbloquea slots puntuales.
 // Selecciona cancha + fecha, ve los slots del día y clickea para bloquear
 // (o clickea un bloqueado para desbloquear).
+// Usa AdminActionModal en lugar de prompt()/confirm() nativos.
 
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -15,6 +16,7 @@ import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { tipoCanchaLabels } from '@/utils/canchaLabels'
 import { Lock, Unlock, Ban } from 'lucide-react'
+import AdminActionModal, { type AdminActionVariant } from '@/components/AdminActionModal'
 
 const selectClass =
   'mt-1 w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500'
@@ -31,6 +33,16 @@ export default function Bloqueos() {
 
   const [canchaId, setCanchaId] = useState<string>('')
   const [fecha, setFecha] = useState(formatearFechaISO(new Date()))
+
+  // Estado del modal de acción
+  const [modal, setModal] = useState<{
+    variant: AdminActionVariant
+    horaInicio: string
+    horaFin?: string
+    bloqueoId?: string
+    motivoActual?: string
+    loading: boolean
+  } | null>(null)
 
   // Seleccionar primera cancha por defecto
   if (!canchaId && canchas && canchas.length > 0) {
@@ -56,7 +68,7 @@ export default function Bloqueos() {
     await queryClient.invalidateQueries({ queryKey: ['bloqueos', canchaId, fecha] })
   }
 
-  async function handleSlotClick(horaInicio: string, estado: string) {
+  function handleSlotClick(horaInicio: string, estado: string) {
     if (estado === 'ocupado') {
       toast.error('No se puede bloquear un slot reservado')
       return
@@ -65,29 +77,48 @@ export default function Bloqueos() {
     if (estado === 'bloqueado') {
       const bloqueo = bloqueos?.find((b) => b.hora_inicio.slice(0, 5) === horaInicio)
       if (!bloqueo) return
-      try {
-        await eliminarBloqueo(bloqueo.id)
-        toast.success('Turno desbloqueado')
-        await invalidar()
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Error')
-      }
+      setModal({
+        variant: 'desbloquear',
+        horaInicio,
+        bloqueoId: bloqueo.id,
+        motivoActual: bloqueo.motivo ?? undefined,
+        loading: false,
+      })
       return
     }
 
-    // Libre → bloquear
-    const motivo = prompt('Motivo del bloqueo (opcional):') ?? null
+    // Libre → abrir modal para bloquear
+    const slotObj = slots?.find((s) => s.horaInicio === horaInicio)
+    setModal({
+      variant: 'bloquear',
+      horaInicio,
+      horaFin: slotObj?.horaFin,
+      loading: false,
+    })
+  }
+
+  async function handleModalConfirm(motivo?: string) {
+    if (!modal) return
+    setModal((m) => m ? { ...m, loading: true } : null)
+
     try {
-      await crearBloqueo({
-        canchaId,
-        fecha,
-        horaInicio,
-        motivo: motivo || null,
-      })
-      toast.success('Turno bloqueado')
+      if (modal.variant === 'bloquear') {
+        await crearBloqueo({
+          canchaId,
+          fecha,
+          horaInicio: modal.horaInicio,
+          motivo: motivo || null,
+        })
+        toast.success('Turno bloqueado')
+      } else if (modal.variant === 'desbloquear' && modal.bloqueoId) {
+        await eliminarBloqueo(modal.bloqueoId)
+        toast.success('Turno desbloqueado')
+      }
       await invalidar()
+      setModal(null)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Error')
+      setModal((m) => m ? { ...m, loading: false } : null)
     }
   }
 
@@ -147,7 +178,7 @@ export default function Bloqueos() {
               {libresCount} libre{libresCount !== 1 ? 's' : ''}
             </div>
             <div className="flex items-center gap-1.5 text-xs text-neutral-600">
-              <span className="inline-block h-2.5 w-2.5 rounded-sm bg-neutral-300" />
+              <span className="inline-block h-2.5 w-2.5 rounded-sm bg-amber-300" />
               {bloqueadosCount} bloqueado{bloqueadosCount !== 1 ? 's' : ''}
             </div>
             <div className="flex items-center gap-1.5 text-xs text-neutral-600">
@@ -248,10 +279,27 @@ export default function Bloqueos() {
           Bloqueado — click para desbloquear
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="inline-block h-3 w-3 rounded-sm bg-neutral-300" />
+          <span className="inline-block h-3 w-3 rounded-sm bg-neutral-200" />
           Reservado — no modificable
         </div>
       </div>
+
+      {/* Modal de acción */}
+      {modal && (
+        <AdminActionModal
+          variant={modal.variant}
+          slot={{
+            cancha: canchaSel?.nombre ?? 'Cancha',
+            fecha,
+            horaInicio: modal.horaInicio,
+            horaFin: modal.horaFin,
+            motivoActual: modal.motivoActual,
+          }}
+          loading={modal.loading}
+          onConfirm={handleModalConfirm}
+          onClose={() => setModal(null)}
+        />
+      )}
     </div>
   )
 }

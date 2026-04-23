@@ -248,6 +248,9 @@ export async function fetchReservasDelComplejo(
     .order('fecha', { ascending: false })
     .order('hora_inicio', { ascending: false })
 
+  // Excluir archivadas por defecto (se ven en Resúmenes Mensuales)
+  q = q.eq('archivada', false)
+
   if (filtros?.canchaId) q = q.eq('cancha_id', filtros.canchaId)
   if (filtros?.fecha) q = q.eq('fecha', filtros.fecha)
   if (filtros?.estado) q = q.eq('estado', filtros.estado)
@@ -256,6 +259,14 @@ export async function fetchReservasDelComplejo(
   const { data, error } = await q
   if (error) throw error
   return data as never
+}
+
+export async function registrarAsistencia(id: string, asistio: boolean) {
+  const { error } = await supabase
+    .from('reservas')
+    .update({ asistio })
+    .eq('id', id)
+  if (error) throw error
 }
 
 export async function cancelarReservaAdmin(id: string) {
@@ -302,6 +313,122 @@ export async function cancelarReservaAdmin(id: string) {
       console.warn('No se pudo enviar notificación de cancelación')
     }
   }
+}
+
+// ---------- Archivo mensual ----------
+
+export interface ResumenMes {
+  anio: number
+  mes: number   // 1–12
+  totalReservas: number
+  confirmadas: number
+  canceladas: number
+  asistieron: number
+  noAsistieron: number
+  ingresos: number
+}
+
+/** Trae todos los meses distintos con reservas archivadas (para el historial) */
+export async function fetchMesesArchivados(complejoId: string): Promise<ResumenMes[]> {
+  const { data, error } = await supabase
+    .from('reservas')
+    .select(`
+      fecha, estado, asistio,
+      canchas!inner ( complejo_id, precio )
+    `)
+    .eq('canchas.complejo_id', complejoId)
+    .eq('archivada', true)
+    .order('fecha', { ascending: false })
+
+  if (error) throw error
+
+  // Agrupar por año-mes
+  const map = new Map<string, ResumenMes>()
+  for (const r of (data as any[])) {
+    const d = new Date(r.fecha)
+    const key = `${d.getFullYear()}-${d.getMonth() + 1}`
+    if (!map.has(key)) {
+      map.set(key, {
+        anio: d.getFullYear(),
+        mes: d.getMonth() + 1,
+        totalReservas: 0,
+        confirmadas: 0,
+        canceladas: 0,
+        asistieron: 0,
+        noAsistieron: 0,
+        ingresos: 0,
+      })
+    }
+    const m = map.get(key)!
+    m.totalReservas++
+    if (r.estado === 'confirmada') {
+      m.confirmadas++
+      m.ingresos += r.canchas?.precio ?? 0
+    }
+    if (r.estado === 'cancelada_admin') m.canceladas++
+    if (r.asistio === true) m.asistieron++
+    if (r.asistio === false) m.noAsistieron++
+  }
+
+  return Array.from(map.values()).sort(
+    (a, b) => b.anio - a.anio || b.mes - a.mes
+  )
+}
+
+/** Trae el detalle de reservas de un mes específico para el PDF */
+export async function fetchReservasMes(
+  complejoId: string,
+  anio: number,
+  mes: number
+): Promise<ReservaAdmin[]> {
+  const desde = `${anio}-${String(mes).padStart(2, '0')}-01`
+  const hasta = new Date(anio, mes, 0).toISOString().slice(0, 10) // último día del mes
+
+  const { data, error } = await supabase
+    .from('reservas')
+    .select(`
+      *,
+      canchas!inner ( nombre, tipo, complejo_id, precio ),
+      profiles ( nombre, telefono, email )
+    `)
+    .eq('canchas.complejo_id', complejoId)
+    .gte('fecha', desde)
+    .lte('fecha', hasta)
+    .order('fecha', { ascending: true })
+    .order('hora_inicio', { ascending: true })
+
+  if (error) throw error
+  return data as never
+}
+
+/** Archiva todas las reservas de un mes (marca archivada=true) */
+export async function archivarMes(
+  complejoId: string,
+  anio: number,
+  mes: number
+): Promise<void> {
+  const desde = `${anio}-${String(mes).padStart(2, '0')}-01`
+  const hasta = new Date(anio, mes, 0).toISOString().slice(0, 10)
+
+  // Obtener IDs de canchas del complejo
+  const { data: canchas, error: cErr } = await supabase
+    .from('canchas')
+    .select('id')
+    .eq('complejo_id', complejoId)
+  if (cErr) throw cErr
+
+  const canchaIds = (canchas ?? []).map((c: { id: string }) => c.id)
+  if (canchaIds.length === 0) return
+
+  const { error } = await supabase
+    .from('reservas')
+    .update({ archivada: true })
+    .in('cancha_id', canchaIds)
+    .gte('fecha', desde)
+    .lte('fecha', hasta)
+    .neq('archivada', true)
+
+  if (error) throw error
 }
 
 // ---------- Estadísticas ----------

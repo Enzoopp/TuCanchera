@@ -21,6 +21,7 @@ import GestionCanchas from '@/pages/admin/GestionCanchas'
 import Bloqueos from '@/pages/admin/Bloqueos'
 import ReservasAdmin from '@/pages/admin/Reservas'
 import Estadisticas from '@/pages/admin/Estadisticas'
+import ResumenesMensuales from '@/pages/admin/ResumenesMensuales'
 import { Toaster } from '@/components/ui/sonner'
 
 const queryClient = new QueryClient({
@@ -96,6 +97,7 @@ function App() {
                 <Route path="bloqueos" element={<Bloqueos />} />
                 <Route path="reservas" element={<ReservasAdmin />} />
                 <Route path="estadisticas" element={<Estadisticas />} />
+                <Route path="resumenes" element={<ResumenesMensuales />} />
               </Route>
             </Route>
 

@@ -1,6 +1,7 @@
 // SRP: Historial completo de reservas del complejo del admin, con filtros.
+// Usa AdminActionModal para cancelar reservas en lugar de confirm() nativo.
 
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { useMiComplejo } from '@/hooks/useMiComplejo'
@@ -14,7 +15,9 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Phone, Mail, SlidersHorizontal, X } from 'lucide-react'
+import { Phone, Mail, SlidersHorizontal, X, UserCheck, UserX } from 'lucide-react'
+import AdminActionModal from '@/components/AdminActionModal'
+import { registrarAsistencia } from '@/services/adminService'
 
 export default function Reservas() {
   const { data: complejo } = useMiComplejo()
@@ -26,6 +29,46 @@ export default function Reservas() {
     estado: '',
     metodoPago: '',
   })
+
+  // Tick que se actualiza cada minuto para re-evaluar qué turnos ya pasaron
+  // sin necesidad de recargar la página.
+  const [ahora, setAhora] = useState(() => new Date())
+  useEffect(() => {
+    const id = setInterval(() => setAhora(new Date()), 60_000)
+    return () => clearInterval(id)
+  }, [])
+
+  // Modal de cancelación
+  const [modalCancelar, setModalCancelar] = useState<{
+    id: string
+    cliente: string
+    cancha: string
+    fecha: string
+    horaInicio: string
+    horaFin: string
+    loading: boolean
+  } | null>(null)
+
+  // Devuelve true si la hora_fin de la reserva ya pasó.
+  // Usa `ahora` (state con tick de 1 min) para que React re-evalue automáticamente
+  // cuando un turno termina, sin necesidad de recargar la página.
+  function turnoPasado(fecha: string, horaFin: string): boolean {
+    const fin = new Date(`${fecha}T${horaFin.slice(0, 5)}:00`)
+    return fin < ahora
+  }
+
+  async function handleAsistencia(id: string, valor: boolean) {
+    try {
+      await registrarAsistencia(id, valor)
+      // Invalida todas las queries que empiezan con 'admin-' para sincronizar
+      // el dashboard y la vista de reservas al mismo tiempo.
+      await queryClient.invalidateQueries({ queryKey: ['admin-reservas'] })
+      await queryClient.invalidateQueries({ queryKey: ['admin-dashboard-reservas'] })
+      toast.success(valor ? 'Marcado como presente ✓' : 'Marcado como ausente')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Error al registrar asistencia')
+    }
+  }
 
   const { data: canchas } = useQuery({
     queryKey: ['admin-canchas-todas', complejo?.id],
@@ -49,16 +92,39 @@ export default function Reservas() {
     queryKey: ['admin-reservas', complejo?.id, filtrosQ],
     queryFn: () => fetchReservasDelComplejo(complejo!.id, filtrosQ),
     enabled: !!complejo,
+    refetchInterval: 60_000, // sincronizar con el tick de ahora — datos frescos cada minuto
   })
 
-  async function cancelar(id: string) {
-    if (!confirm('¿Cancelar esta reserva? El cliente será notificado.')) return
+  function abrirModalCancelar(r: {
+    id: string
+    profiles?: { nombre?: string } | null
+    canchas?: { nombre?: string } | null
+    fecha: string
+    hora_inicio: string
+    hora_fin: string
+  }) {
+    setModalCancelar({
+      id: r.id,
+      cliente: r.profiles?.nombre ?? 'Cliente',
+      cancha: r.canchas?.nombre ?? 'Cancha',
+      fecha: r.fecha,
+      horaInicio: r.hora_inicio.slice(0, 5),
+      horaFin: r.hora_fin.slice(0, 5),
+      loading: false,
+    })
+  }
+
+  async function confirmarCancelacion() {
+    if (!modalCancelar) return
+    setModalCancelar((m) => m ? { ...m, loading: true } : null)
     try {
-      await cancelarReservaAdmin(id)
+      await cancelarReservaAdmin(modalCancelar.id)
       toast.success('Reserva cancelada')
       await queryClient.invalidateQueries({ queryKey: ['admin-reservas'] })
+      setModalCancelar(null)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Error al cancelar')
+      setModalCancelar((m) => m ? { ...m, loading: false } : null)
     }
   }
 
@@ -268,17 +334,65 @@ export default function Reservas() {
                             : 'Cancelada'}
                       </Badge>
                     </td>
-                    <td className="px-4 py-3 text-right">
-                      {r.estado !== 'cancelada_admin' && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => cancelar(r.id)}
-                          className="text-xs text-neutral-500 hover:text-red-600"
-                        >
-                          Cancelar
-                        </Button>
-                      )}
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-end gap-2">
+                        {/* Asistencia: solo para "en_lugar" + confirmada + turno pasado */}
+                        {r.metodo_pago === 'en_lugar' &&
+                          r.estado === 'confirmada' &&
+                          turnoPasado(r.fecha, r.hora_fin) && (
+                            r.asistio === null ? (
+                              <div className="flex items-center gap-1">
+                                <span className="mr-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-400">
+                                  ¿Vino?
+                                </span>
+                                <button
+                                  type="button"
+                                  title="Sí vino — marcar como pagado"
+                                  onClick={() => handleAsistencia(r.id, true)}
+                                  className="flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700 transition-colors hover:bg-emerald-100"
+                                >
+                                  <UserCheck className="h-3.5 w-3.5" />
+                                  Sí
+                                </button>
+                                <button
+                                  type="button"
+                                  title="No se presentó"
+                                  onClick={() => handleAsistencia(r.id, false)}
+                                  className="flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-xs font-semibold text-red-600 transition-colors hover:bg-red-100"
+                                >
+                                  <UserX className="h-3.5 w-3.5" />
+                                  No
+                                </button>
+                              </div>
+                            ) : (
+                              <span
+                                className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                                  r.asistio
+                                    ? 'bg-emerald-100 text-emerald-700'
+                                    : 'bg-red-100 text-red-600'
+                                }`}
+                              >
+                                {r.asistio ? (
+                                  <><UserCheck className="h-3 w-3" /> Asistió</>
+                                ) : (
+                                  <><UserX className="h-3 w-3" /> No asistió</>
+                                )}
+                              </span>
+                            )
+                        )}
+
+                        {/* Cancelar: solo si no está cancelada Y no se marcó asistencia */}
+                        {r.estado !== 'cancelada_admin' && r.asistio === null && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => abrirModalCancelar(r)}
+                            className="text-xs text-neutral-500 hover:text-red-600"
+                          >
+                            Cancelar
+                          </Button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -289,14 +403,28 @@ export default function Reservas() {
 
         {/* Footer con count */}
         {reservas && reservas.length > 0 && (
-          <div className="border-t border-neutral-100 bg-neutral-50 px-4 py-2.5">
-            <p className="text-xs text-neutral-500">
-              {reservas.length} {reservas.length === 1 ? 'reserva' : 'reservas'}
-              {hayFiltrosActivos ? ' con los filtros aplicados' : ' en total'}
-            </p>
+          <div className="border-t border-neutral-100 bg-neutral-50 px-4 py-2.5 text-xs text-neutral-500">
+            {reservas.length} reserva{reservas.length !== 1 ? 's' : ''}
           </div>
         )}
       </div>
+
+      {/* Modal de cancelación */}
+      {modalCancelar && (
+        <AdminActionModal
+          variant="cancelar"
+          slot={{
+            cliente: modalCancelar.cliente,
+            cancha: modalCancelar.cancha,
+            fecha: modalCancelar.fecha,
+            horaInicio: modalCancelar.horaInicio,
+            horaFin: modalCancelar.horaFin,
+          }}
+          loading={modalCancelar.loading}
+          onConfirm={confirmarCancelacion}
+          onClose={() => setModalCancelar(null)}
+        />
+      )}
     </div>
   )
 }

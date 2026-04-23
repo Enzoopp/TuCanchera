@@ -1,10 +1,13 @@
 // SRP: Vista general del día para el admin.
 // Contadores rápidos, reservas del día agrupadas por cancha, accesos directos.
+// Los turnos pasados se muestran diferenciados con opción de marcar asistencia.
 
+import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { useMiComplejo } from '@/hooks/useMiComplejo'
-import { fetchReservasDelComplejo } from '@/services/adminService'
+import { fetchReservasDelComplejo, registrarAsistencia } from '@/services/adminService'
 import { fetchCanchasByComplejo, fetchBloqueosByCancha } from '@/services/complejoService'
 import { formatearFechaISO } from '@/utils/fechas'
 import { tipoCanchaLabels } from '@/utils/canchaLabels'
@@ -18,16 +21,27 @@ import {
   BarChart3,
   ArrowRight,
   DollarSign,
+  UserCheck,
+  UserX,
 } from 'lucide-react'
 
 export default function Dashboard() {
   const { data: complejo, isLoading: loadingCx } = useMiComplejo()
+  const queryClient = useQueryClient()
   const hoy = formatearFechaISO(new Date())
+
+  // Tick de 1 minuto para re-evaluar qué turnos ya pasaron
+  const [ahora, setAhora] = useState(() => new Date())
+  useEffect(() => {
+    const id = setInterval(() => setAhora(new Date()), 60_000)
+    return () => clearInterval(id)
+  }, [])
 
   const { data: reservas, isLoading: loadingR } = useQuery({
     queryKey: ['admin-dashboard-reservas', complejo?.id, hoy],
     queryFn: () => fetchReservasDelComplejo(complejo!.id, { fecha: hoy }),
     enabled: !!complejo,
+    refetchInterval: 60_000,
   })
 
   const { data: canchas } = useQuery({
@@ -47,6 +61,23 @@ export default function Dashboard() {
     },
     enabled: !!canchas && canchas.length > 0,
   })
+
+  function turnoPasado(fecha: string, horaFin: string): boolean {
+    const fin = new Date(`${fecha}T${horaFin.slice(0, 5)}:00`)
+    return fin < ahora
+  }
+
+  async function handleAsistencia(id: string, valor: boolean) {
+    try {
+      await registrarAsistencia(id, valor)
+      // Invalida ambas caches para que Dashboard y Reservas queden sincronizados
+      await queryClient.invalidateQueries({ queryKey: ['admin-dashboard-reservas'] })
+      await queryClient.invalidateQueries({ queryKey: ['admin-reservas'] })
+      toast.success(valor ? 'Marcado como presente ✓' : 'Marcado como ausente')
+    } catch {
+      toast.error('Error al registrar asistencia')
+    }
+  }
 
   if (loadingCx || loadingR) {
     return (
@@ -70,17 +101,26 @@ export default function Dashboard() {
   const bloqueadasCount = bloqueos?.length ?? 0
 
   // Ingresos del día (solo confirmadas)
-  const ingresosDia = confirmadas.reduce((acc, r) => {
-    return acc + (r.canchas?.precio ?? 0)
-  }, 0)
+  const ingresosDia = confirmadas.reduce((acc, r) => acc + (r.canchas?.precio ?? 0), 0)
 
-  // Agrupar reservas confirmadas + pendientes por cancha
-  const porCancha = new Map<string, typeof reservas>()
-  for (const r of [...(confirmadas ?? []), ...(pendientes ?? [])]) {
-    const key = r.cancha_id
-    if (!porCancha.has(key)) porCancha.set(key, [])
-    porCancha.get(key)!.push(r)
+  // Separar reservas en próximas vs finalizadas
+  const activas = [...confirmadas, ...pendientes]
+
+  // Agrupar por cancha
+  function agruparPorCancha(lista: typeof activas) {
+    const map = new Map<string, typeof activas>()
+    for (const r of lista) {
+      if (!map.has(r.cancha_id)) map.set(r.cancha_id, [])
+      map.get(r.cancha_id)!.push(r)
+    }
+    return map
   }
+
+  const proximas = activas.filter((r) => !turnoPasado(r.fecha, r.hora_fin))
+  const finalizadas = activas.filter((r) => turnoPasado(r.fecha, r.hora_fin))
+
+  const porCanchaProximas = agruparPorCancha(proximas)
+  const porCanchaFinalizadas = agruparPorCancha(finalizadas)
 
   const fechaDisplay = new Date().toLocaleDateString('es-AR', {
     weekday: 'long',
@@ -151,10 +191,10 @@ export default function Dashboard() {
         />
       </div>
 
-      {/* Reservas del día */}
+      {/* Próximos turnos */}
       <section>
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-base font-bold text-neutral-900">Reservas de hoy</h2>
+          <h2 className="text-base font-bold text-neutral-900">Próximos turnos</h2>
           <Link
             to="/admin/reservas"
             className="flex items-center gap-1 text-sm font-medium text-primary-600 hover:text-primary-500 transition-colors"
@@ -164,72 +204,186 @@ export default function Dashboard() {
           </Link>
         </div>
 
-        {confirmadas.length === 0 && pendientes.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-neutral-300 bg-white p-10 text-center">
-            <p className="text-sm font-medium text-neutral-500">No hay reservas para hoy.</p>
-            <p className="mt-1 text-xs text-neutral-400">Las reservas aparecerán acá cuando los clientes reserven.</p>
+        {proximas.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-neutral-300 bg-white p-8 text-center">
+            <p className="text-sm font-medium text-neutral-500">No hay turnos próximos para hoy.</p>
+            <p className="mt-1 text-xs text-neutral-400">
+              {finalizadas.length > 0
+                ? 'Todos los turnos del día ya finalizaron.'
+                : 'Las reservas aparecerán acá cuando los clientes reserven.'}
+            </p>
           </div>
         ) : (
-          <div className="space-y-3">
-            {canchas?.map((c) => {
-              const lista = porCancha.get(c.id) ?? []
-              if (lista.length === 0) return null
-              return (
-                <div
-                  key={c.id}
-                  className="overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm"
-                >
-                  {/* Cancha header */}
-                  <div className="flex items-center justify-between border-b border-neutral-100 bg-neutral-50 px-4 py-3">
-                    <div>
-                      <h3 className="text-sm font-bold text-neutral-900">{c.nombre}</h3>
-                      <p className="text-xs text-neutral-500">{tipoCanchaLabels[c.tipo]}</p>
-                    </div>
-                    <span className="rounded-full bg-primary-100 px-2.5 py-0.5 text-xs font-semibold text-primary-700">
-                      {lista.length} {lista.length === 1 ? 'turno' : 'turnos'}
-                    </span>
-                  </div>
-
-                  {/* Reservas */}
-                  <ul className="divide-y divide-neutral-100">
-                    {lista
-                      .sort((a, b) => a.hora_inicio.localeCompare(b.hora_inicio))
-                      .map((r) => (
-                        <li
-                          key={r.id}
-                          className="flex items-center justify-between px-4 py-3"
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className="flex h-9 w-14 items-center justify-center rounded-lg bg-neutral-100 text-sm font-black text-neutral-900">
-                              {r.hora_inicio.slice(0, 5)}
-                            </div>
-                            <div>
-                              <p className="text-sm font-medium text-neutral-900">
-                                {r.profiles?.nombre ?? 'Cliente'}
-                              </p>
-                              <p className="text-xs text-neutral-500">
-                                {r.metodo_pago === 'mercadopago' ? 'MercadoPago' : 'Paga en el lugar'}
-                              </p>
-                            </div>
-                          </div>
-                          <Badge
-                            variant={r.estado === 'confirmada' ? 'default' : 'secondary'}
-                            className="shrink-0"
-                          >
-                            {r.estado === 'confirmada' ? 'Confirmada' : 'Pendiente'}
-                          </Badge>
-                        </li>
-                      ))}
-                  </ul>
-                </div>
-              )
-            })}
-          </div>
+          <GruposCanchas
+            canchas={canchas ?? []}
+            porCancha={porCanchaProximas}
+            turnoPasado={turnoPasado}
+            onAsistencia={handleAsistencia}
+          />
         )}
       </section>
+
+      {/* Turnos finalizados (solo si hay) */}
+      {finalizadas.length > 0 && (
+        <section>
+          <h2 className="mb-3 text-base font-bold text-neutral-900">
+            Turnos finalizados
+            <span className="ml-2 text-sm font-normal text-neutral-400">— registrá la asistencia</span>
+          </h2>
+          <GruposCanchas
+            canchas={canchas ?? []}
+            porCancha={porCanchaFinalizadas}
+            turnoPasado={turnoPasado}
+            onAsistencia={handleAsistencia}
+            pasados
+          />
+        </section>
+      )}
     </div>
   )
 }
+
+// ─── Sub-componente: lista de canchas con sus reservas ────────────────────────
+
+import type { ReservaAdmin } from '@/services/adminService'
+import type { Cancha } from '@/types'
+
+function GruposCanchas({
+  canchas,
+  porCancha,
+  turnoPasado,
+  onAsistencia,
+  pasados = false,
+}: {
+  canchas: Cancha[]
+  porCancha: Map<string, ReservaAdmin[]>
+  turnoPasado: (fecha: string, horaFin: string) => boolean
+  onAsistencia: (id: string, valor: boolean) => void
+  pasados?: boolean
+}) {
+  return (
+    <div className="space-y-3">
+      {canchas.map((c) => {
+        const lista = (porCancha.get(c.id) ?? []).sort((a, b) =>
+          a.hora_inicio.localeCompare(b.hora_inicio)
+        )
+        if (lista.length === 0) return null
+
+        return (
+          <div
+            key={c.id}
+            className={`overflow-hidden rounded-2xl border bg-white shadow-sm ${
+              pasados ? 'border-neutral-200 opacity-90' : 'border-neutral-200'
+            }`}
+          >
+            {/* Cancha header */}
+            <div className="flex items-center justify-between border-b border-neutral-100 bg-neutral-50 px-4 py-3">
+              <div>
+                <h3 className="text-sm font-bold text-neutral-900">{c.nombre}</h3>
+                <p className="text-xs text-neutral-500">{tipoCanchaLabels[c.tipo]}</p>
+              </div>
+              <span className="rounded-full bg-primary-100 px-2.5 py-0.5 text-xs font-semibold text-primary-700">
+                {lista.length} {lista.length === 1 ? 'turno' : 'turnos'}
+              </span>
+            </div>
+
+            <ul className="divide-y divide-neutral-100">
+              {lista.map((r) => {
+                const esEnLugar = r.metodo_pago === 'en_lugar'
+                const pasado = turnoPasado(r.fecha, r.hora_fin)
+                const necesitaAsistencia = esEnLugar && pasado && r.estado === 'confirmada' && r.asistio === null
+
+                return (
+                  <li
+                    key={r.id}
+                    className={`flex items-center justify-between gap-3 px-4 py-3 ${
+                      pasado ? 'bg-neutral-50/60' : ''
+                    }`}
+                  >
+                    {/* Hora */}
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div
+                        className={`flex h-9 w-14 shrink-0 items-center justify-center rounded-lg text-sm font-black ${
+                          pasado
+                            ? 'bg-neutral-200 text-neutral-500'
+                            : 'bg-neutral-100 text-neutral-900'
+                        }`}
+                      >
+                        {r.hora_inicio.slice(0, 5)}
+                      </div>
+                      <div className="min-w-0">
+                        <p className={`truncate text-sm font-medium ${pasado ? 'text-neutral-500' : 'text-neutral-900'}`}>
+                          {r.profiles?.nombre ?? 'Cliente'}
+                        </p>
+                        <p className="text-xs text-neutral-400">
+                          {r.metodo_pago === 'mercadopago' ? 'MercadoPago' : 'Paga en el lugar'}
+                          {' · '}
+                          {r.hora_inicio.slice(0, 5)}–{r.hora_fin.slice(0, 5)}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Derecha: asistencia o badge de estado */}
+                    <div className="flex shrink-0 items-center gap-2">
+                      {necesitaAsistencia ? (
+                        <>
+                          <span className="text-[10px] font-semibold uppercase tracking-wide text-neutral-400">
+                            ¿Vino?
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => onAsistencia(r.id, true)}
+                            title="Sí vino"
+                            className="flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700 transition-colors hover:bg-emerald-100"
+                          >
+                            <UserCheck className="h-3.5 w-3.5" />
+                            Sí
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onAsistencia(r.id, false)}
+                            title="No se presentó"
+                            className="flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-xs font-semibold text-red-600 transition-colors hover:bg-red-100"
+                          >
+                            <UserX className="h-3.5 w-3.5" />
+                            No
+                          </button>
+                        </>
+                      ) : r.asistio !== null ? (
+                        <span
+                          className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                            r.asistio
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : 'bg-red-100 text-red-600'
+                          }`}
+                        >
+                          {r.asistio ? (
+                            <><UserCheck className="h-3 w-3" /> Asistió</>
+                          ) : (
+                            <><UserX className="h-3 w-3" /> No asistió</>
+                          )}
+                        </span>
+                      ) : (
+                        <Badge
+                          variant={r.estado === 'confirmada' ? 'default' : 'secondary'}
+                          className="shrink-0"
+                        >
+                          {r.estado === 'confirmada' ? 'Confirmada' : 'Pendiente'}
+                        </Badge>
+                      )}
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ─── StatCard ─────────────────────────────────────────────────────────────────
 
 function StatCard({
   label,
@@ -253,10 +407,10 @@ function StatCard({
       <div className={`inline-flex rounded-lg p-2 ${bg}`}>
         <Icon className={`h-5 w-5 ${color}`} />
       </div>
-      <p className={`mt-2 ${isString ? 'text-xl' : 'text-3xl'} font-black text-neutral-900`}>
+      <p className={`mt-3 ${isString ? 'text-xl' : 'text-3xl'} font-black text-neutral-900`}>
         {value}
       </p>
-      <p className="mt-0.5 text-xs font-medium text-neutral-500">{label}</p>
+      <p className="mt-0.5 text-xs text-neutral-500">{label}</p>
     </div>
   )
 }
