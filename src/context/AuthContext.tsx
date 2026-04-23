@@ -32,6 +32,7 @@ interface AuthContextValue {
   ) => Promise<{ error: Error | null }>
   signInWithGoogle: () => Promise<{ error: Error | null }>
   signOut: () => Promise<void>
+  refreshProfile: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined)
@@ -152,6 +153,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: error ? new Error(error.message) : null }
   }
 
+  async function refreshProfile() {
+    if (!user) return
+    const updated = await fetchProfile(user.id)
+    setProfile(updated)
+  }
+
   async function signOut() {
     await supabase.auth.signOut()
     setUser(null)
@@ -171,6 +178,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         signUp,
         signInWithGoogle,
         signOut,
+        refreshProfile,
       }}
     >
       {children}

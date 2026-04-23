@@ -1,7 +1,7 @@
 // Tipos e interfaces globales de TuCanchera
 // Mapean directamente a las tablas de Supabase definidas en supabase/schema.sql
 
-export type Rol = 'cliente' | 'admin'
+export type Rol = 'cliente' | 'admin' | 'superadmin'
 
 export type TipoCancha = 'futbol5' | 'futbol7' | 'padel'
 
@@ -16,6 +16,7 @@ export interface Profile {
   user_id: string
   nombre: string
   telefono: string | null
+  email: string | null
   rol: Rol
   creado_en: string
 }

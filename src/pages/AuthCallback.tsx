@@ -24,10 +24,9 @@ export default function AuthCallback() {
       async (event, session) => {
         if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
           if (isEmailConfirmation) {
-            // Flujo de confirmación de email: mostrar pantalla de éxito
             setEstado('email_confirmado')
           } else {
-            // Flujo OAuth (Google, etc.): redirigir automáticamente según rol
+            // OAuth (Google) o invite de admin: redirigir según rol
             if (session?.user) {
               const { data: profile } = await supabase
                 .from('profiles')
@@ -35,7 +34,9 @@ export default function AuthCallback() {
                 .eq('user_id', session.user.id)
                 .single()
 
-              if (profile?.rol === 'admin') {
+              if (profile?.rol === 'superadmin') {
+                navigate('/superadmin', { replace: true })
+              } else if (profile?.rol === 'admin') {
                 navigate('/admin/dashboard', { replace: true })
               } else {
                 navigate('/explorar', { replace: true })
