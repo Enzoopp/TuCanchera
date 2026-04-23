@@ -1,15 +1,23 @@
-// ResumenesMensuales: historial de meses archivados.
-// Permite descargar el PDF de cualquier mes archivado
-// y cerrar el mes actual para archivarlo.
+// ResumenesMensuales: historial de meses cerrados.
+//
+// Flujo al cerrar un mes:
+//   1. Se obtienen las reservas del mes (todavía en la DB)
+//   2. Se calcula el resumen (KPIs)
+//   3. Se genera y descarga el PDF con el detalle completo
+//   4. Se guarda el resumen en resumen_meses (solo 10 números)
+//   5. Se BORRAN PERMANENTEMENTE las reservas de ese mes
+//
+// El historial muestra los KPIs de cada mes cerrado.
+// No hay "re-descargar PDF" — el admin ya lo tiene en su computadora.
 
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { useMiComplejo } from '@/hooks/useMiComplejo'
 import {
-  fetchMesesArchivados,
+  fetchResumenesMeses,
   fetchReservasMes,
-  archivarMes,
+  cerrarMes,
   type ResumenMes,
   type ReservaAdmin,
 } from '@/services/adminService'
@@ -17,15 +25,13 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Archive,
-  Download,
   CalendarDays,
   TrendingUp,
-  Users,
   CheckCircle2,
   XCircle,
   AlertCircle,
+  Trash2,
 } from 'lucide-react'
-import AdminActionModal from '@/components/AdminActionModal'
 
 const MESES = [
   '', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
@@ -41,7 +47,6 @@ async function generarPDF(
   resumen: ResumenMes,
   reservas: ReservaAdmin[]
 ) {
-  // Importación dinámica para no aumentar el bundle inicial
   const { default: jsPDF } = await import('jspdf')
   const { default: autoTable } = await import('jspdf-autotable')
 
@@ -49,7 +54,7 @@ async function generarPDF(
   const ancho = doc.internal.pageSize.getWidth()
 
   // ── Encabezado ──
-  doc.setFillColor(22, 101, 52) // verde oscuro
+  doc.setFillColor(22, 101, 52)
   doc.rect(0, 0, ancho, 32, 'F')
 
   doc.setTextColor(255, 255, 255)
@@ -69,11 +74,11 @@ async function generarPDF(
 
   const kpis = [
     { label: 'Total reservas', valor: String(resumen.totalReservas) },
-    { label: 'Confirmadas', valor: String(resumen.confirmadas) },
-    { label: 'Canceladas', valor: String(resumen.canceladas) },
-    { label: 'Asistieron', valor: String(resumen.asistieron) },
-    { label: 'No asistieron', valor: String(resumen.noAsistieron) },
-    { label: 'Ingresos', valor: `$${resumen.ingresos.toLocaleString('es-AR')}` },
+    { label: 'Confirmadas',    valor: String(resumen.confirmadas) },
+    { label: 'Canceladas',     valor: String(resumen.canceladas) },
+    { label: 'Asistieron',     valor: String(resumen.asistieron) },
+    { label: 'No asistieron',  valor: String(resumen.noAsistieron) },
+    { label: 'Ingresos',       valor: `$${resumen.ingresos.toLocaleString('es-AR')}` },
   ]
 
   const colW = (ancho - 28) / 3
@@ -151,58 +156,46 @@ async function generarPDF(
 export default function ResumenesMensuales() {
   const { data: complejo } = useMiComplejo()
   const queryClient = useQueryClient()
-  const [descargando, setDescargando] = useState<string | null>(null)
   const [cerrando, setCerrando] = useState(false)
   const [modalCerrar, setModalCerrar] = useState(false)
 
   const hoy = new Date()
-  const mesActual = { anio: hoy.getFullYear(), mes: hoy.getMonth() + 1 }
   const mesPasado = hoy.getMonth() === 0
     ? { anio: hoy.getFullYear() - 1, mes: 12 }
     : { anio: hoy.getFullYear(), mes: hoy.getMonth() }
 
-  const { data: meses, isLoading } = useQuery({
-    queryKey: ['admin-meses-archivados', complejo?.id],
-    queryFn: () => fetchMesesArchivados(complejo!.id),
+  const { data: resumenes, isLoading } = useQuery({
+    queryKey: ['admin-resumenes-meses', complejo?.id],
+    queryFn: () => fetchResumenesMeses(complejo!.id),
     enabled: !!complejo,
   })
 
-  async function handleDescargar(anio: number, mes: number) {
-    if (!complejo) return
-    const key = `${anio}-${mes}`
-    setDescargando(key)
-    try {
-      const reservas = await fetchReservasMes(complejo.id, anio, mes)
-      const resumen = meses?.find((m) => m.anio === anio && m.mes === mes)
-      if (!resumen) throw new Error('Resumen no encontrado')
-      await generarPDF(complejo.nombre, anio, mes, resumen, reservas)
-    } catch (err) {
-      toast.error('No se pudo generar el PDF')
-      console.error(err)
-    } finally {
-      setDescargando(null)
-    }
-  }
+  // ¿Ya está cerrado el mes pasado?
+  const mesPasadoCerrado = resumenes?.some(
+    (r) => r.anio === mesPasado.anio && r.mes === mesPasado.mes
+  ) ?? false
 
   async function handleCerrarMes() {
     if (!complejo) return
     setCerrando(true)
     try {
-      // Generar PDF del mes a cerrar
+      // 1. Traer reservas del mes (todavía están en la DB)
       const reservas = await fetchReservasMes(complejo.id, mesPasado.anio, mesPasado.mes)
-      const total = reservas.length
-      const confirmadas = reservas.filter((r) => r.estado === 'confirmada').length
-      const canceladas = reservas.filter((r) => r.estado === 'cancelada_admin').length
-      const asistieron = reservas.filter((r) => r.asistio === true).length
+
+      // 2. Calcular KPIs
+      const totalReservas = reservas.length
+      const confirmadas  = reservas.filter((r) => r.estado === 'confirmada').length
+      const canceladas   = reservas.filter((r) => r.estado === 'cancelada_admin').length
+      const asistieron   = reservas.filter((r) => r.asistio === true).length
       const noAsistieron = reservas.filter((r) => r.asistio === false).length
-      const ingresos = reservas
+      const ingresos     = reservas
         .filter((r) => r.estado === 'confirmada')
         .reduce((acc, r) => acc + ((r.canchas as any)?.precio ?? 0), 0)
 
-      const resumen: ResumenMes = {
+      const kpis: ResumenMes = {
         anio: mesPasado.anio,
         mes: mesPasado.mes,
-        totalReservas: total,
+        totalReservas,
         confirmadas,
         canceladas,
         asistieron,
@@ -210,14 +203,17 @@ export default function ResumenesMensuales() {
         ingresos,
       }
 
-      await generarPDF(complejo.nombre, mesPasado.anio, mesPasado.mes, resumen, reservas)
-      await archivarMes(complejo.id, mesPasado.anio, mesPasado.mes)
+      // 3. Generar y descargar el PDF (con detalle completo, antes de borrar)
+      await generarPDF(complejo.nombre, mesPasado.anio, mesPasado.mes, kpis, reservas)
 
-      await queryClient.invalidateQueries({ queryKey: ['admin-meses-archivados'] })
+      // 4. Guardar KPIs + borrar reservas permanentemente
+      await cerrarMes(complejo.id, mesPasado.anio, mesPasado.mes, kpis)
+
+      await queryClient.invalidateQueries({ queryKey: ['admin-resumenes-meses'] })
       await queryClient.invalidateQueries({ queryKey: ['admin-reservas'] })
       await queryClient.invalidateQueries({ queryKey: ['admin-dashboard-reservas'] })
 
-      toast.success(`Mes de ${MESES[mesPasado.mes]} archivado y PDF descargado`)
+      toast.success(`${MESES[mesPasado.mes]} cerrado — PDF descargado y reservas eliminadas`)
       setModalCerrar(false)
     } catch (err) {
       toast.error('Error al cerrar el mes')
@@ -234,42 +230,44 @@ export default function ResumenesMensuales() {
         <div>
           <h1 className="text-2xl font-black text-neutral-900">Resúmenes mensuales</h1>
           <p className="mt-0.5 text-sm text-neutral-500">
-            Archivá los meses cerrados y descargá el PDF con el detalle completo.
+            Cerrá el mes, descargá el PDF y liberá espacio en la base de datos.
           </p>
         </div>
 
         {/* Botón cerrar mes */}
-        <button
-          type="button"
-          onClick={() => setModalCerrar(true)}
-          className="flex items-center gap-2 rounded-xl bg-neutral-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-neutral-700"
-        >
-          <Archive className="h-4 w-4" />
-          Cerrar {MESES[mesPasado.mes]} {mesPasado.anio !== mesActual.anio ? mesPasado.anio : ''}
-        </button>
+        {!mesPasadoCerrado && (
+          <button
+            type="button"
+            onClick={() => setModalCerrar(true)}
+            className="flex items-center gap-2 rounded-xl bg-neutral-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-neutral-700"
+          >
+            <Archive className="h-4 w-4" />
+            Cerrar {MESES[mesPasado.mes]}{mesPasado.anio !== hoy.getFullYear() ? ` ${mesPasado.anio}` : ''}
+          </button>
+        )}
       </div>
 
-      {/* Info de qué significa cerrar un mes */}
+      {/* Aviso: qué pasa al cerrar */}
       <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
         <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
         <p className="text-sm text-amber-800">
-          Cerrar un mes descarga el PDF automáticamente y archiva las reservas de ese período.
-          Las reservas archivadas <strong>no se borran</strong> — dejan de aparecer en la vista
-          principal pero quedan guardadas acá.
+          Al cerrar un mes se descarga el PDF automáticamente y las reservas de ese período
+          se <strong>eliminan permanentemente</strong> para liberar espacio.
+          Guardá bien el PDF — es el único registro que queda.
         </p>
       </div>
 
-      {/* Lista de meses archivados */}
+      {/* Lista de meses cerrados */}
       <div className="overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm">
         <div className="border-b border-neutral-100 bg-neutral-50 px-5 py-4">
-          <h2 className="text-sm font-semibold text-neutral-700">Historial archivado</h2>
+          <h2 className="text-sm font-semibold text-neutral-700">Historial cerrado</h2>
         </div>
 
         {isLoading ? (
           <div className="space-y-2 p-5">
             {[1, 2, 3].map((i) => <Skeleton key={i} className="h-16 rounded-xl" />)}
           </div>
-        ) : !meses || meses.length === 0 ? (
+        ) : !resumenes || resumenes.length === 0 ? (
           <div className="py-14 text-center">
             <Archive className="mx-auto h-8 w-8 text-neutral-300" />
             <p className="mt-3 text-sm font-medium text-neutral-500">Todavía no cerraste ningún mes.</p>
@@ -279,14 +277,13 @@ export default function ResumenesMensuales() {
           </div>
         ) : (
           <ul className="divide-y divide-neutral-100">
-            {meses.map((m) => {
-              const key = `${m.anio}-${m.mes}`
+            {resumenes.map((m) => {
               const tasaAsistencia = m.confirmadas > 0
                 ? Math.round((m.asistieron / m.confirmadas) * 100)
                 : null
 
               return (
-                <li key={key} className="flex items-center justify-between gap-4 px-5 py-4">
+                <li key={`${m.anio}-${m.mes}`} className="flex items-center justify-between gap-4 px-5 py-4">
                   {/* Mes y año */}
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-50">
@@ -324,17 +321,10 @@ export default function ResumenesMensuales() {
                     />
                   </div>
 
-                  {/* Descargar PDF */}
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={descargando === key}
-                    onClick={() => handleDescargar(m.anio, m.mes)}
-                    className="shrink-0 gap-1.5"
-                  >
-                    <Download className="h-3.5 w-3.5" />
-                    {descargando === key ? 'Generando…' : 'PDF'}
-                  </Button>
+                  {/* Badge "cerrado" */}
+                  <span className="shrink-0 rounded-full bg-neutral-100 px-3 py-1 text-xs font-medium text-neutral-500">
+                    Cerrado
+                  </span>
                 </li>
               )
             })}
@@ -342,20 +332,21 @@ export default function ResumenesMensuales() {
         )}
       </div>
 
-      {/* Modal confirmación de cierre de mes */}
+      {/* Modal confirmación cierre de mes */}
       {modalCerrar && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
           <div className="w-full max-w-sm rounded-2xl border border-neutral-200 bg-white p-6 shadow-xl">
-            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-neutral-100 mx-auto">
-              <Archive className="h-7 w-7 text-neutral-700" />
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-red-50 mx-auto">
+              <Trash2 className="h-7 w-7 text-red-500" />
             </div>
 
             <h3 className="mt-4 text-center text-xl font-black text-neutral-900">
-              Cerrar {MESES[mesPasado.mes]} {mesPasado.anio !== mesActual.anio ? mesPasado.anio : ''}
+              Cerrar {MESES[mesPasado.mes]}{mesPasado.anio !== hoy.getFullYear() ? ` ${mesPasado.anio}` : ''}
             </h3>
             <p className="mt-2 text-center text-sm text-neutral-500">
-              Se va a generar y descargar el PDF del mes, y todas las reservas
-              de {MESES[mesPasado.mes]} quedarán archivadas.
+              Se va a descargar el PDF con el detalle completo y luego
+              <strong className="text-neutral-700"> todas las reservas de {MESES[mesPasado.mes]} se eliminarán para siempre</strong>.
+              Esta acción no se puede deshacer.
             </p>
 
             <div className="mt-5 flex gap-3">
@@ -371,10 +362,10 @@ export default function ResumenesMensuales() {
                 type="button"
                 onClick={handleCerrarMes}
                 disabled={cerrando}
-                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-neutral-900 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-neutral-700 disabled:opacity-60"
+                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-red-500 disabled:opacity-60"
               >
-                <Archive className="h-4 w-4" />
-                {cerrando ? 'Procesando…' : 'Cerrar mes'}
+                <Trash2 className="h-4 w-4" />
+                {cerrando ? 'Procesando…' : 'Cerrar y eliminar'}
               </button>
             </div>
           </div>

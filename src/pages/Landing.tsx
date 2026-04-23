@@ -267,12 +267,24 @@ export default function Landing() {
               © {new Date().getFullYear()}
             </span>
           </div>
-          <Link
-            to="/register-admin"
-            className="text-sm font-medium text-primary-400 hover:text-primary-300 hover:underline transition-colors"
-          >
-            ¿Tenés un complejo? Sumate →
-          </Link>
+          <div className="flex items-center gap-3 text-sm text-neutral-500">
+            <span>¿Tenés un complejo?</span>
+            <a
+              href="https://wa.me/543435059834"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium text-primary-400 hover:text-primary-300 hover:underline transition-colors"
+            >
+              WhatsApp
+            </a>
+            <span className="text-neutral-700">·</span>
+            <a
+              href="mailto:enzopitana@gmail.com"
+              className="font-medium text-primary-400 hover:text-primary-300 hover:underline transition-colors"
+            >
+              enzopitana@gmail.com
+            </a>
+          </div>
         </div>
       </footer>
     </div>
@@ -289,14 +301,24 @@ function EmptyState() {
         Todavía no hay complejos cargados
       </h3>
       <p className="mx-auto mt-2 max-w-md text-sm text-neutral-500">
-        Volvé pronto o, si administrás un complejo, registrate como admin para
-        ser de los primeros en aparecer acá.
+        Volvé pronto. Si administrás un complejo y querés sumarte, contactanos.
       </p>
-      <Link to="/register-admin" className="mt-5 inline-block">
-        <Button size="sm" className="rounded-full">
-          Registrarme como admin
-        </Button>
-      </Link>
+      <div className="mt-5 flex items-center justify-center gap-3">
+        <a
+          href="https://wa.me/543435059834"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400 transition-colors"
+        >
+          WhatsApp
+        </a>
+        <a
+          href="mailto:enzopitana@gmail.com"
+          className="inline-flex items-center gap-1.5 rounded-full border border-neutral-300 bg-white px-4 py-2 text-sm font-semibold text-neutral-700 hover:bg-neutral-50 transition-colors"
+        >
+          enzopitana@gmail.com
+        </a>
+      </div>
     </div>
   )
 }

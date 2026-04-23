@@ -32,6 +32,8 @@ export default function Login() {
 
     if (from) {
       navigate(from, { replace: true })
+    } else if (rol === 'superadmin') {
+      navigate('/superadmin', { replace: true })
     } else if (rol === 'admin') {
       navigate('/admin/dashboard', { replace: true })
     } else {
@@ -218,10 +220,15 @@ export default function Login() {
               </Link>
             </p>
             <p className="mt-2">
-              ¿Sos administrador?{' '}
-              <Link to="/register-admin" className="font-medium text-primary-600 hover:underline">
-                Registrate como admin
-              </Link>
+              ¿Tenés un complejo?{' '}
+              <a
+                href="https://wa.me/543435059834"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-medium text-primary-600 hover:underline"
+              >
+                Contactanos
+              </a>
             </p>
           </div>
         </div>

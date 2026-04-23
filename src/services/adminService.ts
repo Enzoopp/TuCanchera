@@ -248,9 +248,6 @@ export async function fetchReservasDelComplejo(
     .order('fecha', { ascending: false })
     .order('hora_inicio', { ascending: false })
 
-  // Excluir archivadas por defecto (se ven en Resúmenes Mensuales)
-  q = q.eq('archivada', false)
-
   if (filtros?.canchaId) q = q.eq('cancha_id', filtros.canchaId)
   if (filtros?.fecha) q = q.eq('fecha', filtros.fecha)
   if (filtros?.estado) q = q.eq('estado', filtros.estado)
@@ -315,7 +312,12 @@ export async function cancelarReservaAdmin(id: string) {
   }
 }
 
-// ---------- Archivo mensual ----------
+// ---------- Cierre mensual ----------
+// Al cerrar un mes:
+//   1. El frontend genera el PDF (con el detalle completo todavía disponible)
+//   2. Se guardan los KPIs en resumen_meses (solo 10 números — ocupa nada)
+//   3. Se borran PERMANENTEMENTE las reservas de ese mes
+// Resultado: la base de datos queda liviana y el admin tiene el PDF como archivo.
 
 export interface ResumenMes {
   anio: number
@@ -328,61 +330,14 @@ export interface ResumenMes {
   ingresos: number
 }
 
-/** Trae todos los meses distintos con reservas archivadas (para el historial) */
-export async function fetchMesesArchivados(complejoId: string): Promise<ResumenMes[]> {
-  const { data, error } = await supabase
-    .from('reservas')
-    .select(`
-      fecha, estado, asistio,
-      canchas!inner ( complejo_id, precio )
-    `)
-    .eq('canchas.complejo_id', complejoId)
-    .eq('archivada', true)
-    .order('fecha', { ascending: false })
-
-  if (error) throw error
-
-  // Agrupar por año-mes
-  const map = new Map<string, ResumenMes>()
-  for (const r of (data as any[])) {
-    const d = new Date(r.fecha)
-    const key = `${d.getFullYear()}-${d.getMonth() + 1}`
-    if (!map.has(key)) {
-      map.set(key, {
-        anio: d.getFullYear(),
-        mes: d.getMonth() + 1,
-        totalReservas: 0,
-        confirmadas: 0,
-        canceladas: 0,
-        asistieron: 0,
-        noAsistieron: 0,
-        ingresos: 0,
-      })
-    }
-    const m = map.get(key)!
-    m.totalReservas++
-    if (r.estado === 'confirmada') {
-      m.confirmadas++
-      m.ingresos += r.canchas?.precio ?? 0
-    }
-    if (r.estado === 'cancelada_admin') m.canceladas++
-    if (r.asistio === true) m.asistieron++
-    if (r.asistio === false) m.noAsistieron++
-  }
-
-  return Array.from(map.values()).sort(
-    (a, b) => b.anio - a.anio || b.mes - a.mes
-  )
-}
-
-/** Trae el detalle de reservas de un mes específico para el PDF */
+/** Trae el detalle de reservas de un mes específico (antes de cerrarlo y borrarlos) */
 export async function fetchReservasMes(
   complejoId: string,
   anio: number,
   mes: number
 ): Promise<ReservaAdmin[]> {
   const desde = `${anio}-${String(mes).padStart(2, '0')}-01`
-  const hasta = new Date(anio, mes, 0).toISOString().slice(0, 10) // último día del mes
+  const hasta = new Date(anio, mes, 0).toISOString().slice(0, 10)
 
   const { data, error } = await supabase
     .from('reservas')
@@ -401,16 +356,64 @@ export async function fetchReservasMes(
   return data as never
 }
 
-/** Archiva todas las reservas de un mes (marca archivada=true) */
-export async function archivarMes(
+/** Historial de meses ya cerrados — lee de resumen_meses (solo KPIs, sin reservas) */
+export async function fetchResumenesMeses(complejoId: string): Promise<ResumenMes[]> {
+  const { data, error } = await supabase
+    .from('resumen_meses')
+    .select('*')
+    .eq('complejo_id', complejoId)
+    .order('anio', { ascending: false })
+    .order('mes', { ascending: false })
+
+  if (error) throw error
+
+  return (data ?? []).map((r: any) => ({
+    anio: r.anio,
+    mes: r.mes,
+    totalReservas: r.total_reservas,
+    confirmadas: r.confirmadas,
+    canceladas: r.canceladas,
+    asistieron: r.asistieron,
+    noAsistieron: r.no_asistieron,
+    ingresos: r.ingresos,
+  }))
+}
+
+/**
+ * Cierra un mes:
+ *   1. Guarda los KPIs en resumen_meses
+ *   2. Borra PERMANENTEMENTE todas las reservas de ese período
+ *
+ * Llamar DESPUÉS de generar y descargar el PDF.
+ */
+export async function cerrarMes(
   complejoId: string,
   anio: number,
-  mes: number
+  mes: number,
+  kpis: Omit<ResumenMes, 'anio' | 'mes'>
 ): Promise<void> {
   const desde = `${anio}-${String(mes).padStart(2, '0')}-01`
   const hasta = new Date(anio, mes, 0).toISOString().slice(0, 10)
 
-  // Obtener IDs de canchas del complejo
+  // 1. Guardar KPIs (upsert por si se reintenta)
+  const { error: kpiError } = await supabase
+    .from('resumen_meses')
+    .upsert({
+      complejo_id: complejoId,
+      anio,
+      mes,
+      total_reservas: kpis.totalReservas,
+      confirmadas: kpis.confirmadas,
+      canceladas: kpis.canceladas,
+      asistieron: kpis.asistieron,
+      no_asistieron: kpis.noAsistieron,
+      ingresos: kpis.ingresos,
+      cerrado_en: new Date().toISOString(),
+    }, { onConflict: 'complejo_id,anio,mes' })
+
+  if (kpiError) throw kpiError
+
+  // 2. Obtener canchas del complejo
   const { data: canchas, error: cErr } = await supabase
     .from('canchas')
     .select('id')
@@ -420,15 +423,15 @@ export async function archivarMes(
   const canchaIds = (canchas ?? []).map((c: { id: string }) => c.id)
   if (canchaIds.length === 0) return
 
-  const { error } = await supabase
+  // 3. Borrar permanentemente las reservas del mes
+  const { error: delError } = await supabase
     .from('reservas')
-    .update({ archivada: true })
+    .delete()
     .in('cancha_id', canchaIds)
     .gte('fecha', desde)
     .lte('fecha', hasta)
-    .neq('archivada', true)
 
-  if (error) throw error
+  if (delError) throw delError
 }
 
 // ---------- Estadísticas ----------
