@@ -1,16 +1,13 @@
-// ResumenesMensuales: historial de meses cerrados.
-//
+// Resúmenes mensuales — diseño Claude.
 // Flujo al cerrar un mes:
 //   1. Se obtienen las reservas del mes (todavía en la DB)
 //   2. Se calcula el resumen (KPIs)
 //   3. Se genera y descarga el PDF con el detalle completo
 //   4. Se guarda el resumen en resumen_meses (solo 10 números)
 //   5. Se BORRAN PERMANENTEMENTE las reservas de ese mes
-//
-// El historial muestra los KPIs de cada mes cerrado.
-// No hay "re-descargar PDF" — el admin ya lo tiene en su computadora.
 
-import { useState } from 'react'
+import { useState, type CSSProperties } from 'react'
+import { createPortal } from 'react-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { useMiComplejo } from '@/hooks/useMiComplejo'
@@ -21,24 +18,33 @@ import {
   type ResumenMes,
   type ReservaAdmin,
 } from '@/services/adminService'
-import { Button } from '@/components/ui/button'
-import { Skeleton } from '@/components/ui/skeleton'
 import {
   Archive,
   CalendarDays,
   TrendingUp,
   CheckCircle2,
   XCircle,
-  AlertCircle,
+  AlertTriangle,
   Trash2,
 } from 'lucide-react'
 
 const MESES = [
-  '', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
+  '',
+  'Enero',
+  'Febrero',
+  'Marzo',
+  'Abril',
+  'Mayo',
+  'Junio',
+  'Julio',
+  'Agosto',
+  'Septiembre',
+  'Octubre',
+  'Noviembre',
+  'Diciembre',
 ]
 
-// ─── PDF via jspdf + jspdf-autotable ────────────────────────────────────────
+// ─── PDF via jspdf + jspdf-autotable ───────────────────────────────────────
 
 async function generarPDF(
   complejo: string,
@@ -54,7 +60,7 @@ async function generarPDF(
   const ancho = doc.internal.pageSize.getWidth()
 
   // ── Encabezado ──
-  doc.setFillColor(22, 101, 52)
+  doc.setFillColor(37, 99, 235)
   doc.rect(0, 0, ancho, 32, 'F')
 
   doc.setTextColor(255, 255, 255)
@@ -74,11 +80,11 @@ async function generarPDF(
 
   const kpis = [
     { label: 'Total reservas', valor: String(resumen.totalReservas) },
-    { label: 'Confirmadas',    valor: String(resumen.confirmadas) },
-    { label: 'Canceladas',     valor: String(resumen.canceladas) },
-    { label: 'Asistieron',     valor: String(resumen.asistieron) },
-    { label: 'No asistieron',  valor: String(resumen.noAsistieron) },
-    { label: 'Ingresos',       valor: `$${resumen.ingresos.toLocaleString('es-AR')}` },
+    { label: 'Confirmadas', valor: String(resumen.confirmadas) },
+    { label: 'Canceladas', valor: String(resumen.canceladas) },
+    { label: 'Asistieron', valor: String(resumen.asistieron) },
+    { label: 'No asistieron', valor: String(resumen.noAsistieron) },
+    { label: 'Ingresos', valor: `$${resumen.ingresos.toLocaleString('es-AR')}` },
   ]
 
   const colW = (ancho - 28) / 3
@@ -91,7 +97,7 @@ async function generarPDF(
     doc.setFillColor(245, 245, 245)
     doc.roundedRect(x, y, colW - 4, rowH - 2, 2, 2, 'F')
     doc.setFontSize(16)
-    doc.setTextColor(22, 101, 52)
+    doc.setTextColor(37, 99, 235)
     doc.text(k.valor, x + 4, y + 10)
     doc.setFontSize(7.5)
     doc.setTextColor(100, 100, 100)
@@ -110,8 +116,11 @@ async function generarPDF(
     r.canchas?.nombre ?? '—',
     r.profiles?.nombre ?? '—',
     r.metodo_pago === 'mercadopago' ? 'MercadoPago' : 'En el lugar',
-    r.estado === 'confirmada' ? 'Confirmada'
-      : r.estado === 'cancelada_admin' ? 'Cancelada' : 'Pendiente',
+    r.estado === 'confirmada'
+      ? 'Confirmada'
+      : r.estado === 'cancelada_admin'
+        ? 'Cancelada'
+        : 'Pendiente',
     r.asistio === true ? 'Sí' : r.asistio === false ? 'No' : '—',
   ])
 
@@ -120,7 +129,7 @@ async function generarPDF(
     head: [['Fecha', 'Hora', 'Cancha', 'Cliente', 'Pago', 'Estado', 'Asistió']],
     body: filas,
     styles: { fontSize: 8, cellPadding: 2.5 },
-    headStyles: { fillColor: [22, 101, 52], textColor: 255, fontStyle: 'bold' },
+    headStyles: { fillColor: [37, 99, 235], textColor: 255, fontStyle: 'bold' },
     alternateRowStyles: { fillColor: [248, 250, 248] },
     columnStyles: {
       0: { cellWidth: 22 },
@@ -134,8 +143,7 @@ async function generarPDF(
     margin: { left: 14, right: 14 },
   })
 
-  // ── Pie de página ──
-  const paginas = (doc as any).internal.getNumberOfPages()
+  const paginas = (doc as unknown as { internal: { getNumberOfPages: () => number } }).internal.getNumberOfPages()
   for (let i = 1; i <= paginas; i++) {
     doc.setPage(i)
     doc.setFontSize(7)
@@ -151,7 +159,7 @@ async function generarPDF(
   doc.save(`tucanchera-${MESES[mes].toLowerCase()}-${anio}.pdf`)
 }
 
-// ─── Componente ───────────────────────────────────────────────────────────────
+// ─── Componente ───────────────────────────────────────────────────────────
 
 export default function ResumenesMensuales() {
   const { data: complejo } = useMiComplejo()
@@ -160,9 +168,10 @@ export default function ResumenesMensuales() {
   const [modalCerrar, setModalCerrar] = useState(false)
 
   const hoy = new Date()
-  const mesPasado = hoy.getMonth() === 0
-    ? { anio: hoy.getFullYear() - 1, mes: 12 }
-    : { anio: hoy.getFullYear(), mes: hoy.getMonth() }
+  const mesPasado =
+    hoy.getMonth() === 0
+      ? { anio: hoy.getFullYear() - 1, mes: 12 }
+      : { anio: hoy.getFullYear(), mes: hoy.getMonth() }
 
   const { data: resumenes, isLoading } = useQuery({
     queryKey: ['admin-resumenes-meses', complejo?.id],
@@ -170,27 +179,23 @@ export default function ResumenesMensuales() {
     enabled: !!complejo,
   })
 
-  // ¿Ya está cerrado el mes pasado?
-  const mesPasadoCerrado = resumenes?.some(
-    (r) => r.anio === mesPasado.anio && r.mes === mesPasado.mes
-  ) ?? false
+  const mesPasadoCerrado =
+    resumenes?.some((r) => r.anio === mesPasado.anio && r.mes === mesPasado.mes) ?? false
 
   async function handleCerrarMes() {
     if (!complejo) return
     setCerrando(true)
     try {
-      // 1. Traer reservas del mes (todavía están en la DB)
       const reservas = await fetchReservasMes(complejo.id, mesPasado.anio, mesPasado.mes)
 
-      // 2. Calcular KPIs
       const totalReservas = reservas.length
-      const confirmadas  = reservas.filter((r) => r.estado === 'confirmada').length
-      const canceladas   = reservas.filter((r) => r.estado === 'cancelada_admin').length
-      const asistieron   = reservas.filter((r) => r.asistio === true).length
+      const confirmadas = reservas.filter((r) => r.estado === 'confirmada').length
+      const canceladas = reservas.filter((r) => r.estado === 'cancelada_admin').length
+      const asistieron = reservas.filter((r) => r.asistio === true).length
       const noAsistieron = reservas.filter((r) => r.asistio === false).length
-      const ingresos     = reservas
+      const ingresos = reservas
         .filter((r) => r.estado === 'confirmada')
-        .reduce((acc, r) => acc + ((r.canchas as any)?.precio ?? 0), 0)
+        .reduce((acc, r) => acc + ((r.canchas as unknown as { precio?: number } | null)?.precio ?? 0), 0)
 
       const kpis: ResumenMes = {
         anio: mesPasado.anio,
@@ -203,10 +208,7 @@ export default function ResumenesMensuales() {
         ingresos,
       }
 
-      // 3. Generar y descargar el PDF (con detalle completo, antes de borrar)
       await generarPDF(complejo.nombre, mesPasado.anio, mesPasado.mes, kpis, reservas)
-
-      // 4. Guardar KPIs + borrar reservas permanentemente
       await cerrarMes(complejo.id, mesPasado.anio, mesPasado.mes, kpis)
 
       await queryClient.invalidateQueries({ queryKey: ['admin-resumenes-meses'] })
@@ -223,157 +225,311 @@ export default function ResumenesMensuales() {
     }
   }
 
+  const pageStyle: CSSProperties = {
+    padding: '32px 32px 60px',
+    maxWidth: 1200,
+    fontFamily: "'DM Sans', sans-serif",
+  }
+
+  const mesLabel = `${MESES[mesPasado.mes]}${mesPasado.anio !== hoy.getFullYear() ? ` ${mesPasado.anio}` : ''}`
+
   return (
-    <div className="space-y-6">
+    <div style={pageStyle}>
       {/* Header */}
-      <div className="flex items-start justify-between">
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: 16,
+          marginBottom: 24,
+        }}
+      >
         <div>
-          <h1 className="text-2xl font-black text-neutral-900">Resúmenes mensuales</h1>
-          <p className="mt-0.5 text-sm text-neutral-500">
+          <h1
+            style={{
+              fontFamily: "'Space Grotesk', sans-serif",
+              fontSize: '1.9rem',
+              fontWeight: 800,
+              color: '#0f172a',
+              letterSpacing: '-0.03em',
+              margin: '0 0 6px',
+            }}
+          >
+            Resúmenes mensuales
+          </h1>
+          <p style={{ color: '#64748b', fontSize: '0.92rem', margin: 0 }}>
             Cerrá el mes, descargá el PDF y liberá espacio en la base de datos.
           </p>
         </div>
 
-        {/* Botón cerrar mes */}
         {!mesPasadoCerrado && (
           <button
             type="button"
             onClick={() => setModalCerrar(true)}
-            className="flex items-center gap-2 rounded-xl bg-neutral-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-neutral-700"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '11px 18px',
+              borderRadius: 10,
+              border: 'none',
+              background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
+              color: 'white',
+              fontFamily: "'DM Sans', sans-serif",
+              fontSize: '0.88rem',
+              fontWeight: 700,
+              cursor: 'pointer',
+              boxShadow: '0 2px 8px rgba(37,99,235,0.25)',
+              transition: 'all 0.15s',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = 'translateY(-1px)'
+              e.currentTarget.style.boxShadow = '0 4px 14px rgba(37,99,235,0.35)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'translateY(0)'
+              e.currentTarget.style.boxShadow = '0 2px 8px rgba(37,99,235,0.25)'
+            }}
           >
-            <Archive className="h-4 w-4" />
-            Cerrar {MESES[mesPasado.mes]}{mesPasado.anio !== hoy.getFullYear() ? ` ${mesPasado.anio}` : ''}
+            <Archive size={16} />
+            Cerrar {mesLabel}
           </button>
         )}
       </div>
 
-      {/* Aviso: qué pasa al cerrar */}
-      <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
-        <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
-        <p className="text-sm text-amber-800">
-          Al cerrar un mes se descarga el PDF automáticamente y las reservas de ese período
-          se <strong>eliminan permanentemente</strong> para liberar espacio.
+      {/* Aviso */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: 12,
+          padding: '14px 18px',
+          borderRadius: 12,
+          background: 'linear-gradient(135deg, #fffbeb, #fef3c7)',
+          border: '1px solid #fde68a',
+          marginBottom: 24,
+        }}
+      >
+        <AlertTriangle size={18} color="#d97706" style={{ marginTop: 2, flexShrink: 0 }} />
+        <div style={{ fontSize: '0.86rem', color: '#78350f', lineHeight: 1.5 }}>
+          Al cerrar un mes se descarga el PDF automáticamente y las reservas de ese período se{' '}
+          <strong style={{ color: '#78350f' }}>eliminan permanentemente</strong> para liberar espacio.
           Guardá bien el PDF — es el único registro que queda.
-        </p>
+        </div>
       </div>
 
-      {/* Lista de meses cerrados */}
-      <div className="overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm">
-        <div className="border-b border-neutral-100 bg-neutral-50 px-5 py-4">
-          <h2 className="text-sm font-semibold text-neutral-700">Historial cerrado</h2>
+      {/* Lista */}
+      <div
+        style={{
+          background: 'white',
+          borderRadius: 16,
+          border: '1px solid #f1f5f9',
+          boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
+          overflow: 'hidden',
+        }}
+      >
+        <div
+          style={{
+            padding: '18px 22px',
+            borderBottom: '1px solid #f1f5f9',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <h2
+            style={{
+              fontFamily: "'Space Grotesk', sans-serif",
+              fontSize: '1.05rem',
+              fontWeight: 800,
+              color: '#0f172a',
+              letterSpacing: '-0.02em',
+              margin: 0,
+            }}
+          >
+            Historial cerrado
+          </h2>
+          {resumenes && resumenes.length > 0 && (
+            <span style={{ fontSize: '0.82rem', color: '#64748b' }}>
+              {resumenes.length} {resumenes.length === 1 ? 'mes cerrado' : 'meses cerrados'}
+            </span>
+          )}
         </div>
 
         {isLoading ? (
-          <div className="space-y-2 p-5">
-            {[1, 2, 3].map((i) => <Skeleton key={i} className="h-16 rounded-xl" />)}
+          <div style={{ padding: 60, textAlign: 'center' }}>
+            <div
+              style={{
+                display: 'inline-block',
+                width: 28,
+                height: 28,
+                border: '3px solid #e2e8f0',
+                borderTop: '3px solid #2563eb',
+                borderRadius: '50%',
+                animation: 'spin 0.8s linear infinite',
+              }}
+            />
+            <div style={{ marginTop: 10, fontSize: '0.86rem', color: '#94a3b8' }}>Cargando historial…</div>
           </div>
         ) : !resumenes || resumenes.length === 0 ? (
-          <div className="py-14 text-center">
-            <Archive className="mx-auto h-8 w-8 text-neutral-300" />
-            <p className="mt-3 text-sm font-medium text-neutral-500">Todavía no cerraste ningún mes.</p>
-            <p className="mt-1 text-xs text-neutral-400">
+          <div style={{ padding: '60px 24px', textAlign: 'center' }}>
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: 56,
+                height: 56,
+                borderRadius: 16,
+                background: '#f1f5f9',
+                marginBottom: 14,
+              }}
+            >
+              <Archive size={26} color="#94a3b8" />
+            </div>
+            <div
+              style={{
+                fontFamily: "'Space Grotesk', sans-serif",
+                fontSize: '1.05rem',
+                fontWeight: 700,
+                color: '#334155',
+                marginBottom: 4,
+              }}
+            >
+              Todavía no cerraste ningún mes
+            </div>
+            <div style={{ fontSize: '0.86rem', color: '#94a3b8' }}>
               Cuando cierres un mes, el resumen aparecerá acá.
-            </p>
+            </div>
           </div>
         ) : (
-          <ul className="divide-y divide-neutral-100">
-            {resumenes.map((m) => {
-              const tasaAsistencia = m.confirmadas > 0
-                ? Math.round((m.asistieron / m.confirmadas) * 100)
-                : null
-
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            {resumenes.map((m, idx) => {
+              const tasaAsistencia =
+                m.confirmadas > 0 ? Math.round((m.asistieron / m.confirmadas) * 100) : null
               return (
-                <li key={`${m.anio}-${m.mes}`} className="flex items-center justify-between gap-4 px-5 py-4">
+                <div
+                  key={`${m.anio}-${m.mes}`}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 16,
+                    padding: '18px 22px',
+                    borderBottom: idx < resumenes.length - 1 ? '1px solid #f1f5f9' : 'none',
+                    transition: 'background 0.15s',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = '#fafbfc'
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'transparent'
+                  }}
+                >
                   {/* Mes y año */}
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-50">
-                      <CalendarDays className="h-5 w-5 text-primary-600" />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 14, minWidth: 0, flex: 1 }}>
+                    <div
+                      style={{
+                        width: 44,
+                        height: 44,
+                        borderRadius: 12,
+                        background: 'linear-gradient(135deg, #dbeafe, #eff6ff)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                        border: '1px solid #bfdbfe',
+                      }}
+                    >
+                      <CalendarDays size={20} color="#2563eb" />
                     </div>
-                    <div>
-                      <p className="text-sm font-bold text-neutral-900">
+                    <div style={{ minWidth: 0 }}>
+                      <div
+                        style={{
+                          fontFamily: "'Space Grotesk', sans-serif",
+                          fontSize: '1rem',
+                          fontWeight: 800,
+                          color: '#0f172a',
+                          letterSpacing: '-0.01em',
+                          marginBottom: 3,
+                        }}
+                      >
                         {MESES[m.mes]} {m.anio}
-                      </p>
-                      <p className="text-xs text-neutral-500">
+                      </div>
+                      <div style={{ fontSize: '0.78rem', color: '#64748b' }}>
                         {m.totalReservas} reservas · {m.confirmadas} confirmadas
-                      </p>
+                      </div>
                     </div>
                   </div>
 
-                  {/* KPIs rápidos */}
-                  <div className="hidden items-center gap-6 sm:flex">
+                  {/* KPIs chips */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 18,
+                      flexShrink: 0,
+                    }}
+                    className="resumen-kpis"
+                  >
                     <KpiChip
                       icon={TrendingUp}
                       label="Ingresos"
                       valor={`$${m.ingresos.toLocaleString('es-AR')}`}
-                      color="text-primary-700"
+                      color="#2563eb"
                     />
                     <KpiChip
                       icon={CheckCircle2}
                       label="Asistieron"
                       valor={tasaAsistencia !== null ? `${tasaAsistencia}%` : '—'}
-                      color="text-emerald-600"
+                      color="#16a34a"
                     />
                     <KpiChip
                       icon={XCircle}
                       label="Canceladas"
                       valor={String(m.canceladas)}
-                      color="text-red-500"
+                      color="#dc2626"
                     />
                   </div>
 
-                  {/* Badge "cerrado" */}
-                  <span className="shrink-0 rounded-full bg-neutral-100 px-3 py-1 text-xs font-medium text-neutral-500">
+                  {/* Badge cerrado */}
+                  <span
+                    style={{
+                      display: 'inline-block',
+                      padding: '5px 11px',
+                      borderRadius: 99,
+                      background: '#f1f5f9',
+                      color: '#64748b',
+                      fontSize: '0.74rem',
+                      fontWeight: 700,
+                      letterSpacing: '0.03em',
+                      textTransform: 'uppercase',
+                      flexShrink: 0,
+                    }}
+                  >
                     Cerrado
                   </span>
-                </li>
+                </div>
               )
             })}
-          </ul>
+          </div>
         )}
       </div>
 
-      {/* Modal confirmación cierre de mes */}
-      {modalCerrar && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-          <div className="w-full max-w-sm rounded-2xl border border-neutral-200 bg-white p-6 shadow-xl">
-            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-red-50 mx-auto">
-              <Trash2 className="h-7 w-7 text-red-500" />
-            </div>
-
-            <h3 className="mt-4 text-center text-xl font-black text-neutral-900">
-              Cerrar {MESES[mesPasado.mes]}{mesPasado.anio !== hoy.getFullYear() ? ` ${mesPasado.anio}` : ''}
-            </h3>
-            <p className="mt-2 text-center text-sm text-neutral-500">
-              Se va a descargar el PDF con el detalle completo y luego
-              <strong className="text-neutral-700"> todas las reservas de {MESES[mesPasado.mes]} se eliminarán para siempre</strong>.
-              Esta acción no se puede deshacer.
-            </p>
-
-            <div className="mt-5 flex gap-3">
-              <Button
-                variant="outline"
-                className="flex-1"
-                onClick={() => setModalCerrar(false)}
-                disabled={cerrando}
-              >
-                Cancelar
-              </Button>
-              <button
-                type="button"
-                onClick={handleCerrarMes}
-                disabled={cerrando}
-                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-red-500 disabled:opacity-60"
-              >
-                <Trash2 className="h-4 w-4" />
-                {cerrando ? 'Procesando…' : 'Cerrar y eliminar'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Modal confirmación */}
+      {modalCerrar && <ConfirmCloseModal
+        mesLabel={mesLabel}
+        loading={cerrando}
+        onCancel={() => !cerrando && setModalCerrar(false)}
+        onConfirm={handleCerrarMes}
+      />}
     </div>
   )
 }
+
+// ─── KpiChip ──────────────────────────────────────────────────────────────
 
 function KpiChip({
   icon: Icon,
@@ -381,18 +537,170 @@ function KpiChip({
   valor,
   color,
 }: {
-  icon: React.ComponentType<{ className?: string }>
+  icon: React.ComponentType<{ size?: number; color?: string }>
   label: string
   valor: string
   color: string
 }) {
   return (
-    <div className="text-center">
-      <div className={`flex items-center justify-center gap-1 text-sm font-bold ${color}`}>
-        <Icon className="h-3.5 w-3.5" />
+    <div style={{ textAlign: 'center', minWidth: 70 }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 4,
+          fontFamily: "'Space Grotesk', sans-serif",
+          fontSize: '0.92rem',
+          fontWeight: 800,
+          color,
+          lineHeight: 1.1,
+        }}
+      >
+        <Icon size={14} color={color} />
         {valor}
       </div>
-      <p className="text-[10px] text-neutral-400">{label}</p>
+      <div style={{ fontSize: '0.68rem', color: '#94a3b8', marginTop: 3, fontWeight: 600 }}>
+        {label}
+      </div>
     </div>
+  )
+}
+
+// ─── Modal ────────────────────────────────────────────────────────────────
+
+function ConfirmCloseModal({
+  mesLabel,
+  loading,
+  onCancel,
+  onConfirm,
+}: {
+  mesLabel: string
+  loading: boolean
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  return createPortal(
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(15,23,42,0.55)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 1000,
+        padding: 20,
+        animation: 'fadeIn 0.2s ease',
+      }}
+      onClick={onCancel}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: 'white',
+          borderRadius: 16,
+          maxWidth: 440,
+          width: '100%',
+          padding: '28px 26px 22px',
+          boxShadow: '0 24px 64px rgba(0,0,0,0.25)',
+          fontFamily: "'DM Sans', sans-serif",
+          animation: 'popIn 0.25s cubic-bezier(0.34,1.56,0.64,1)',
+        }}
+      >
+        <div
+          style={{
+            width: 56,
+            height: 56,
+            borderRadius: '50%',
+            background: '#fee2e2',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            margin: '0 auto 16px',
+          }}
+        >
+          <Trash2 size={26} color="#dc2626" />
+        </div>
+        <h3
+          style={{
+            fontFamily: "'Space Grotesk', sans-serif",
+            fontSize: '1.3rem',
+            fontWeight: 800,
+            color: '#0f172a',
+            letterSpacing: '-0.02em',
+            margin: '0 0 8px',
+            textAlign: 'center',
+          }}
+        >
+          Cerrar {mesLabel}
+        </h3>
+        <p
+          style={{
+            margin: '0 0 20px',
+            fontSize: '0.9rem',
+            color: '#475569',
+            lineHeight: 1.55,
+            textAlign: 'center',
+          }}
+        >
+          Se va a descargar el PDF con el detalle completo y luego{' '}
+          <strong style={{ color: '#0f172a' }}>
+            todas las reservas de {mesLabel} se eliminarán para siempre
+          </strong>
+          . Esta acción no se puede deshacer.
+        </p>
+
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={loading}
+            style={{
+              flex: 1,
+              padding: '11px 14px',
+              borderRadius: 10,
+              border: '1.5px solid #e2e8f0',
+              background: 'white',
+              color: '#475569',
+              fontFamily: "'DM Sans', sans-serif",
+              fontSize: '0.88rem',
+              fontWeight: 700,
+              cursor: loading ? 'not-allowed' : 'pointer',
+              transition: 'all 0.15s',
+              opacity: loading ? 0.6 : 1,
+            }}
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={loading}
+            style={{
+              flex: 1,
+              padding: '11px 14px',
+              borderRadius: 10,
+              border: 'none',
+              background: loading ? '#ef4444' : 'linear-gradient(135deg, #dc2626, #b91c1c)',
+              color: 'white',
+              fontFamily: "'DM Sans', sans-serif",
+              fontSize: '0.88rem',
+              fontWeight: 700,
+              cursor: loading ? 'not-allowed' : 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 6,
+              boxShadow: loading ? 'none' : '0 2px 8px rgba(220,38,38,0.3)',
+            }}
+          >
+            <Trash2 size={14} />
+            {loading ? 'Procesando…' : 'Cerrar y eliminar'}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
   )
 }

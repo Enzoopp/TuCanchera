@@ -1,324 +1,669 @@
 // SRP: Página pública de inicio. Lista todos los complejos activos
 // para que los clientes puedan descubrirlos, y ofrece accesos a login/registro.
+// Diseño replicado de LandingPage.jsx (hero + search + grid + owner CTA + footer).
 
+import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { useAuth } from '@/context/AuthContext'
+import { supabase } from '@/lib/supabase'
 import { fetchComplejosActivos } from '@/services/complejoService'
-import { Button } from '@/components/ui/button'
-import { Skeleton } from '@/components/ui/skeleton'
-import {
-  MapPin,
-  ArrowRight,
-  LogIn,
-  User,
-  LandPlot,
-  LogOut,
-  Zap,
-} from 'lucide-react'
+import Navbar from '@/components/brand/Navbar'
+import SportIcon from '@/components/brand/SportIcon'
+import { Search, ChevronDown, MapPin, ArrowRight, Sparkles, Building2, Star } from 'lucide-react'
+import type { Cancha, Complejo, TipoCancha } from '@/types'
+
+const SPORTS = ['Todos', 'Fútbol 5', 'Fútbol 7', 'Pádel'] as const
+type SportFilter = (typeof SPORTS)[number]
+
+// Mapea tipo DB → label
+const TIPO_TO_LABEL: Record<TipoCancha, 'Fútbol 5' | 'Fútbol 7' | 'Pádel'> = {
+  futbol5: 'Fútbol 5',
+  futbol7: 'Fútbol 7',
+  padel: 'Pádel',
+}
+
+// Fotos de fallback por tipo (cuando el complejo no tiene logo)
+const FALLBACK_IMG =
+  'https://images.unsplash.com/photo-1508098682722-e99c643e3485?w=600&q=80&fit=crop'
+
+interface ComplejoEnriquecido extends Complejo {
+  sports: Array<'Fútbol 5' | 'Fútbol 7' | 'Pádel'>
+  priceFrom: number | null
+}
+
+async function fetchAllCanchasActivas(): Promise<Cancha[]> {
+  const { data, error } = await supabase
+    .from('canchas')
+    .select('id, complejo_id, tipo, nombre, duracion_min, precio, activa')
+    .eq('activa', true)
+  if (error) throw error
+  return data as Cancha[]
+}
 
 export default function Landing() {
-  const { user, rol, signOut } = useAuth()
-  const { data: complejos, isLoading } = useQuery({
+  const [sport, setSport] = useState<SportFilter>('Todos')
+  const [search, setSearch] = useState('')
+
+  const { data: complejos, isLoading: loadingComplejos } = useQuery({
     queryKey: ['complejos-activos'],
     queryFn: fetchComplejosActivos,
   })
 
+  const { data: canchas, isLoading: loadingCanchas } = useQuery({
+    queryKey: ['canchas-all-activas'],
+    queryFn: fetchAllCanchasActivas,
+  })
+
+  const enriquecidos: ComplejoEnriquecido[] = useMemo(() => {
+    if (!complejos) return []
+    const map: Record<string, Cancha[]> = {}
+    if (canchas) {
+      for (const c of canchas) {
+        if (!map[c.complejo_id]) map[c.complejo_id] = []
+        map[c.complejo_id].push(c)
+      }
+    }
+    return complejos.map((cx) => {
+      const cc = map[cx.id] || []
+      const sportsSet = new Set<'Fútbol 5' | 'Fútbol 7' | 'Pádel'>()
+      let min: number | null = null
+      for (const k of cc) {
+        sportsSet.add(TIPO_TO_LABEL[k.tipo])
+        if (min === null || k.precio < min) min = k.precio
+      }
+      return {
+        ...cx,
+        sports: [...sportsSet],
+        priceFrom: min,
+      }
+    })
+  }, [complejos, canchas])
+
+  const filtered = useMemo(() => {
+    return enriquecidos.filter((cx) => {
+      const matchSport = sport === 'Todos' || cx.sports.includes(sport as 'Fútbol 5' | 'Fútbol 7' | 'Pádel')
+      const q = search.trim().toLowerCase()
+      const matchSearch =
+        !q ||
+        cx.nombre.toLowerCase().includes(q) ||
+        (cx.direccion || '').toLowerCase().includes(q) ||
+        cx.sports.some((s) => s.toLowerCase().includes(q))
+      return matchSport && matchSearch
+    })
+  }, [enriquecidos, sport, search])
+
   return (
-    <div className="min-h-screen bg-neutral-50">
-      {/* Navbar */}
-      <header className="fixed top-0 left-0 right-0 z-50 border-b border-white/10 bg-neutral-950/80 backdrop-blur-md">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3.5">
-          <Link to="/explorar" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-500 text-white">
-              <Zap className="h-4 w-4" />
-            </div>
-            <span className="text-lg font-bold text-white">TuCanchera</span>
-          </Link>
+    <div style={{ background: '#f8fafc', minHeight: '100vh', fontFamily: "'DM Sans', sans-serif" }}>
+      {/* Navbar transparente sobre el hero */}
+      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10 }}>
+        <Navbar transparent />
+      </div>
 
-          <div className="flex items-center gap-2">
-            {user ? (
-              <>
-                {rol === 'admin' ? (
-                  <Link to="/admin/dashboard">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="border-white/20 bg-white/10 text-white hover:bg-white/20"
-                    >
-                      Panel admin
-                    </Button>
-                  </Link>
-                ) : (
-                  <Link to="/mis-reservas">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="border-white/20 bg-white/10 text-white hover:bg-white/20"
-                    >
-                      <User className="mr-1.5 h-4 w-4" />
-                      Mis reservas
-                    </Button>
-                  </Link>
-                )}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={signOut}
-                  title="Cerrar sesión"
-                  className="text-white/60 hover:bg-white/10 hover:text-white"
-                >
-                  <LogOut className="h-4 w-4" />
-                </Button>
-              </>
-            ) : (
-              <>
-                <Link to="/login">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-white/70 hover:bg-white/10 hover:text-white"
-                  >
-                    <LogIn className="mr-1.5 h-4 w-4" />
-                    Iniciar sesión
-                  </Button>
-                </Link>
-                <Link to="/register">
-                  <Button
-                    size="sm"
-                    className="bg-primary-500 text-white hover:bg-primary-400"
-                  >
-                    Registrarme
-                  </Button>
-                </Link>
-              </>
-            )}
-          </div>
-        </div>
-      </header>
-
-      {/* Hero */}
-      <section className="relative flex min-h-[520px] items-center overflow-hidden bg-neutral-950 pt-16">
-        {/* Gradient background */}
-        <div className="absolute inset-0 bg-gradient-to-br from-neutral-950 via-primary-950/60 to-neutral-950" />
-
-        {/* Grid pattern overlay */}
+      {/* ── HERO ───────────────────────────────────────────────────────────── */}
+      <div
+        style={{
+          position: 'relative',
+          minHeight: 620,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          overflow: 'hidden',
+        }}
+      >
+        <img
+          src="https://images.unsplash.com/photo-1574629810360-7efbbe195018?w=1600&q=85&fit=crop"
+          alt=""
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+        />
         <div
-          className="absolute inset-0 opacity-[0.04]"
           style={{
-            backgroundImage: `linear-gradient(var(--color-primary-400) 1px, transparent 1px), linear-gradient(90deg, var(--color-primary-400) 1px, transparent 1px)`,
-            backgroundSize: '40px 40px',
+            position: 'absolute',
+            inset: 0,
+            background: 'linear-gradient(165deg, #0f172a 0%, rgba(29,78,216,0.88) 100%)',
           }}
         />
-
-        {/* Glow effect */}
-        <div className="absolute -top-40 -left-40 h-96 w-96 rounded-full bg-primary-600/20 blur-3xl" />
-        <div className="absolute -bottom-20 right-20 h-64 w-64 rounded-full bg-primary-500/10 blur-3xl" />
-
-        <div className="relative mx-auto max-w-5xl px-4 py-24 text-center">
-          <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-primary-500/30 bg-primary-500/10 px-4 py-1.5 text-sm font-medium text-primary-400">
-            <Zap className="h-3.5 w-3.5" />
-            Reservá en segundos, jugá al instante
+        <div
+          className="page-enter"
+          style={{
+            position: 'relative',
+            zIndex: 1,
+            textAlign: 'center',
+            padding: '120px 24px 80px',
+            maxWidth: 760,
+            margin: '0 auto',
+          }}
+        >
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              background: 'rgba(255,255,255,0.12)',
+              backdropFilter: 'blur(6px)',
+              borderRadius: 99,
+              padding: '6px 18px',
+              marginBottom: 24,
+            }}
+          >
+            <Sparkles size={14} color="#93c5fd" />
+            <span style={{ color: '#bfdbfe', fontSize: '0.8rem', fontWeight: 600 }}>
+              Disponible en toda la provincia de Buenos Aires
+            </span>
           </div>
-
-          <h1 className="mt-4 text-5xl font-black tracking-tight text-white sm:text-6xl md:text-7xl">
-            Reservá tu cancha
-            <br />
-            <span className="text-primary-400">al instante</span>
+          <h1
+            style={{
+              fontFamily: "'Space Grotesk', sans-serif",
+              color: 'white',
+              fontSize: 'clamp(2.4rem, 5vw, 3.6rem)',
+              fontWeight: 800,
+              lineHeight: 1.06,
+              letterSpacing: '-0.03em',
+              margin: '0 0 18px',
+            }}
+          >
+            Encontrá tu<br />cancha ideal
           </h1>
-
-          <p className="mx-auto mt-6 max-w-xl text-lg text-neutral-400">
-            Explorá complejos de fútbol y pádel, elegí el horario que más te
-            convenga y confirmá tu turno sin llamadas ni esperas.
+          <p style={{ color: 'rgba(255,255,255,0.72)', fontSize: '1.1rem', marginBottom: 40, lineHeight: 1.6 }}>
+            Reservá canchas de fútbol y pádel en los mejores complejos, en segundos.
           </p>
 
-          <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            <a href="#complejos">
-              <Button
-                size="lg"
-                className="rounded-full bg-primary-500 px-8 text-base font-semibold text-white hover:bg-primary-400"
+          {/* Search bar */}
+          <div
+            style={{
+              background: 'white',
+              borderRadius: 16,
+              padding: 8,
+              display: 'flex',
+              gap: 8,
+              boxShadow: '0 8px 40px rgba(0,0,0,0.25)',
+              maxWidth: 680,
+              margin: '0 auto 40px',
+              alignItems: 'center',
+            }}
+            className="landing-search"
+          >
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px' }}>
+              <Search size={18} color="#94a3b8" />
+              <input
+                placeholder="Barrio, complejo o deporte…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                style={{
+                  border: 'none',
+                  outline: 'none',
+                  background: 'transparent',
+                  fontSize: '0.95rem',
+                  color: '#111827',
+                  fontFamily: "'DM Sans', sans-serif",
+                  width: '100%',
+                }}
+              />
+            </div>
+            <div style={{ width: 1, background: '#e2e8f0', alignSelf: 'center', height: 28 }} />
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center', minWidth: 140 }}>
+              <select
+                value={sport}
+                onChange={(e) => setSport(e.target.value as SportFilter)}
+                style={{
+                  appearance: 'none',
+                  border: 'none',
+                  outline: 'none',
+                  background: 'transparent',
+                  padding: '8px 36px 8px 14px',
+                  fontSize: '0.9rem',
+                  fontFamily: "'DM Sans', sans-serif",
+                  fontWeight: 600,
+                  color: '#374151',
+                  cursor: 'pointer',
+                  width: '100%',
+                }}
               >
-                Ver complejos disponibles
-                <ArrowRight className="ml-2 h-4 w-4" />
-              </Button>
-            </a>
-            {!user && (
-              <Link to="/register">
-                <Button
-                  size="lg"
-                  variant="outline"
-                  className="rounded-full border-white/20 bg-white/5 px-8 text-base text-white hover:bg-white/10"
-                >
-                  Crear cuenta gratis
-                </Button>
-              </Link>
-            )}
+                {SPORTS.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+              <span style={{ position: 'absolute', right: 10, pointerEvents: 'none' }}>
+                <ChevronDown size={16} color="#6b7280" />
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                const el = document.getElementById('complejos')
+                if (el) el.scrollIntoView({ behavior: 'smooth' })
+              }}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '12px 20px',
+                borderRadius: 12,
+                border: 'none',
+                background: '#2563eb',
+                color: 'white',
+                fontFamily: "'DM Sans', sans-serif",
+                fontSize: '0.9rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                boxShadow: '0 4px 14px rgba(37,99,235,0.35)',
+              }}
+            >
+              <Search size={16} />
+              Buscar
+            </button>
           </div>
-        </div>
-      </section>
 
-      {/* Stats bar */}
-      <div className="border-y border-neutral-200 bg-white">
-        <div className="mx-auto grid max-w-4xl grid-cols-3 divide-x divide-neutral-200 px-4 py-5 text-center">
-          <div>
-            <p className="text-2xl font-black text-primary-600">100%</p>
-            <p className="mt-0.5 text-xs text-neutral-500">Online sin llamadas</p>
-          </div>
-          <div>
-            <p className="text-2xl font-black text-primary-600">24/7</p>
-            <p className="mt-0.5 text-xs text-neutral-500">Disponible siempre</p>
-          </div>
-          <div>
-            <p className="text-2xl font-black text-primary-600">⚡ 30s</p>
-            <p className="mt-0.5 text-xs text-neutral-500">Para reservar</p>
+          {/* Stats */}
+          <div style={{ display: 'flex', justifyContent: 'center', gap: 40, flexWrap: 'wrap' }}>
+            {[
+              ['500+', 'Reservas mensuales'],
+              ['20+', 'Complejos activos'],
+              ['3', 'Deportes'],
+            ].map(([n, l]) => (
+              <div key={n} style={{ textAlign: 'center' }}>
+                <div
+                  style={{
+                    fontFamily: "'Space Grotesk', sans-serif",
+                    color: 'white',
+                    fontSize: '1.8rem',
+                    fontWeight: 800,
+                    letterSpacing: '-0.03em',
+                  }}
+                >
+                  {n}
+                </div>
+                <div style={{ color: 'rgba(255,255,255,0.55)', fontSize: '0.8rem', marginTop: 2 }}>{l}</div>
+              </div>
+            ))}
           </div>
         </div>
       </div>
 
-      {/* Listado de complejos */}
-      <main id="complejos" className="mx-auto max-w-6xl px-4 py-14">
-        <div className="mb-8 text-center">
-          <h2 className="text-3xl font-black text-neutral-900">
-            Complejos disponibles
-          </h2>
-          <p className="mt-2 text-neutral-500">
-            Hacé clic en cualquier complejo para ver canchas y disponibilidad en tiempo real.
-          </p>
+      {/* ── Complexes grid ─────────────────────────────────────────────────── */}
+      <div id="complejos" style={{ maxWidth: 1200, margin: '0 auto', padding: '64px 24px' }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'flex-end',
+            justifyContent: 'space-between',
+            marginBottom: 32,
+            flexWrap: 'wrap',
+            gap: 16,
+          }}
+        >
+          <div>
+            <h2
+              style={{
+                fontFamily: "'Space Grotesk', sans-serif",
+                fontSize: '1.8rem',
+                fontWeight: 800,
+                color: '#0f172a',
+                letterSpacing: '-0.02em',
+                margin: '0 0 6px',
+              }}
+            >
+              Complejos disponibles
+            </h2>
+            <p style={{ color: '#64748b', fontSize: '0.9rem' }}>
+              {loadingComplejos
+                ? 'Cargando complejos…'
+                : `${filtered.length} complejo${filtered.length !== 1 ? 's' : ''} encontrado${filtered.length !== 1 ? 's' : ''}`}
+            </p>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {SPORTS.map((s) => {
+              const active = sport === s
+              return (
+                <button
+                  key={s}
+                  onClick={() => setSport(s)}
+                  style={{
+                    padding: '7px 16px',
+                    borderRadius: 99,
+                    border: '1.5px solid',
+                    borderColor: active ? '#2563eb' : '#e2e8f0',
+                    background: active ? '#2563eb' : 'white',
+                    color: active ? 'white' : '#374151',
+                    fontFamily: "'DM Sans', sans-serif",
+                    fontSize: '0.84rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  {s}
+                </button>
+              )
+            })}
+          </div>
         </div>
 
-        {isLoading ? (
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        {loadingComplejos || loadingCanchas ? (
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
+              gap: 24,
+            }}
+          >
             {[1, 2, 3, 4, 5, 6].map((i) => (
-              <Skeleton key={i} className="h-60 rounded-2xl" />
+              <CardSkeleton key={i} />
             ))}
           </div>
-        ) : !complejos || complejos.length === 0 ? (
+        ) : filtered.length === 0 ? (
           <EmptyState />
         ) : (
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {complejos.map((c) => (
-              <Link
-                key={c.id}
-                to={`/${c.slug}`}
-                className="group block overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-lg"
-              >
-                {/* Image / Logo area */}
-                <div className="relative flex h-40 items-center justify-center overflow-hidden bg-gradient-to-br from-primary-600 to-primary-900">
-                  {/* Diagonal lines pattern */}
-                  <div
-                    className="absolute inset-0 opacity-10"
-                    style={{
-                      backgroundImage:
-                        'repeating-linear-gradient(45deg, white 0, white 1px, transparent 0, transparent 50%)',
-                      backgroundSize: '12px 12px',
-                    }}
-                  />
-                  {c.logo_url ? (
-                    <img
-                      src={c.logo_url}
-                      alt={`Logo de ${c.nombre}`}
-                      className="relative z-10 h-20 w-20 rounded-xl object-cover shadow-lg ring-4 ring-white/20"
-                    />
-                  ) : (
-                    <div className="relative z-10 flex h-20 w-20 items-center justify-center rounded-xl bg-white/10 text-4xl font-black text-white shadow-lg ring-4 ring-white/20 backdrop-blur-sm">
-                      {c.nombre.charAt(0).toUpperCase()}
-                    </div>
-                  )}
-                </div>
-
-                {/* Card body */}
-                <div className="p-4">
-                  <h3 className="text-base font-bold text-neutral-900 group-hover:text-primary-600 transition-colors">
-                    {c.nombre}
-                  </h3>
-                  {c.direccion && (
-                    <p className="mt-1.5 flex items-start gap-1.5 text-xs text-neutral-500">
-                      <MapPin className="mt-0.5 h-3 w-3 shrink-0 text-primary-500" />
-                      <span className="line-clamp-1">{c.direccion}</span>
-                    </p>
-                  )}
-                  {c.descripcion && (
-                    <p className="mt-2 line-clamp-2 text-sm text-neutral-600">
-                      {c.descripcion}
-                    </p>
-                  )}
-                  <div className="mt-3 flex items-center justify-between">
-                    <span className="inline-flex items-center gap-1 rounded-full bg-primary-50 px-2.5 py-0.5 text-xs font-medium text-primary-700">
-                      Ver disponibilidad
-                    </span>
-                    <ArrowRight className="h-4 w-4 text-neutral-300 transition-all group-hover:translate-x-0.5 group-hover:text-primary-500" />
-                  </div>
-                </div>
-              </Link>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
+              gap: 24,
+            }}
+          >
+            {filtered.map((cx) => (
+              <ComplexCard key={cx.id} cx={cx} />
             ))}
           </div>
         )}
-      </main>
+      </div>
 
-      {/* Footer */}
-      <footer className="border-t border-neutral-200 bg-neutral-950">
-        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-4 py-8 sm:flex-row">
-          <div className="flex items-center gap-2">
-            <div className="flex h-6 w-6 items-center justify-center rounded bg-primary-500 text-white">
-              <Zap className="h-3.5 w-3.5" />
-            </div>
-            <span className="text-sm font-bold text-white">TuCanchera</span>
-            <span className="text-sm text-neutral-500">
-              © {new Date().getFullYear()}
+      {/* ── Owner CTA ─────────────────────────────────────────────────────── */}
+      <div
+        style={{
+          background: 'linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%)',
+          padding: '72px 24px',
+          textAlign: 'center',
+        }}
+      >
+        <div style={{ maxWidth: 680, margin: '0 auto' }}>
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              background: 'rgba(255,255,255,0.15)',
+              borderRadius: 99,
+              padding: '6px 18px',
+              marginBottom: 20,
+            }}
+          >
+            <Building2 size={14} color="white" />
+            <span style={{ color: 'rgba(255,255,255,0.9)', fontSize: '0.8rem', fontWeight: 600 }}>
+              Para dueños de complejos
             </span>
           </div>
-          <div className="flex items-center gap-3 text-sm text-neutral-500">
-            <span>¿Tenés un complejo?</span>
+          <h2
+            style={{
+              fontFamily: "'Space Grotesk', sans-serif",
+              color: 'white',
+              fontSize: 'clamp(1.8rem, 4vw, 2.4rem)',
+              fontWeight: 800,
+              letterSpacing: '-0.03em',
+              margin: '0 0 16px',
+              lineHeight: 1.1,
+            }}
+          >
+            ¿Tenés un complejo<br />deportivo?
+          </h2>
+          <p style={{ color: 'rgba(255,255,255,0.75)', fontSize: '1rem', lineHeight: 1.7, marginBottom: 36 }}>
+            Sumate a TuCanchera y empezá a recibir reservas online hoy mismo.
+            <br />
+            Sin comisiones ocultas, setup en minutos.
+          </p>
+          <div style={{ display: 'flex', gap: 14, justifyContent: 'center', flexWrap: 'wrap' }}>
             <a
               href="https://wa.me/543435059834"
               target="_blank"
               rel="noopener noreferrer"
-              className="font-medium text-primary-400 hover:text-primary-300 hover:underline transition-colors"
+              style={{
+                background: 'white',
+                color: '#1e3a8a',
+                padding: '14px 28px',
+                borderRadius: 12,
+                fontFamily: "'DM Sans', sans-serif",
+                fontSize: '0.95rem',
+                fontWeight: 700,
+                textDecoration: 'none',
+                boxShadow: '0 4px 14px rgba(0,0,0,0.15)',
+              }}
             >
-              WhatsApp
+              Registrar mi complejo
             </a>
-            <span className="text-neutral-700">·</span>
             <a
               href="mailto:enzopitana@gmail.com"
-              className="font-medium text-primary-400 hover:text-primary-300 hover:underline transition-colors"
+              style={{
+                background: 'transparent',
+                color: 'white',
+                padding: '14px 28px',
+                borderRadius: 12,
+                border: '1.5px solid rgba(255,255,255,0.4)',
+                fontFamily: "'DM Sans', sans-serif",
+                fontSize: '0.95rem',
+                fontWeight: 700,
+                textDecoration: 'none',
+              }}
             >
-              enzopitana@gmail.com
+              Contactar
             </a>
           </div>
         </div>
-      </footer>
+      </div>
+
+      {/* ── Footer ─────────────────────────────────────────────────────────── */}
+      <div style={{ background: '#0f172a', padding: '28px 24px', textAlign: 'center' }}>
+        <p style={{ color: '#475569', fontSize: '0.82rem', fontFamily: "'DM Sans', sans-serif" }}>
+          © {new Date().getFullYear()} TuCanchera · Todos los derechos reservados ·{' '}
+          <span style={{ color: '#2563eb' }}>Términos</span> ·{' '}
+          <span style={{ color: '#2563eb' }}>Privacidad</span>
+        </p>
+      </div>
+    </div>
+  )
+}
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/* Subcomponentes                                                             */
+/* ─────────────────────────────────────────────────────────────────────────── */
+
+function ComplexCard({ cx }: { cx: ComplejoEnriquecido }) {
+  const [hovered, setHovered] = useState(false)
+  const img = cx.logo_url || FALLBACK_IMG
+  return (
+    <Link
+      to={`/${cx.slug}`}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        display: 'block',
+        textDecoration: 'none',
+        background: 'white',
+        borderRadius: 16,
+        overflow: 'hidden',
+        cursor: 'pointer',
+        boxShadow: hovered ? '0 16px 48px rgba(0,0,0,0.14)' : '0 2px 16px rgba(0,0,0,0.07)',
+        transform: hovered ? 'translateY(-4px)' : 'none',
+        transition: 'all 0.22s ease',
+        border: '1px solid #f1f5f9',
+      }}
+    >
+      <div style={{ position: 'relative', height: 200, overflow: 'hidden' }}>
+        <img
+          src={img}
+          alt={cx.nombre}
+          style={{
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            transform: hovered ? 'scale(1.05)' : 'scale(1)',
+            transition: 'transform 0.4s ease',
+          }}
+        />
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 14,
+            left: 14,
+            display: 'flex',
+            gap: 6,
+            flexWrap: 'wrap',
+          }}
+        >
+          {cx.sports.map((s) => (
+            <div
+              key={s}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                background: 'rgba(0,0,0,0.55)',
+                backdropFilter: 'blur(8px)',
+                color: 'white',
+                padding: '4px 10px',
+                borderRadius: 99,
+                fontSize: '0.73rem',
+                fontWeight: 600,
+              }}
+            >
+              <SportIcon sport={s} size={12} color="white" />
+              {s}
+            </div>
+          ))}
+        </div>
+      </div>
+      <div style={{ padding: '18px 20px 20px' }}>
+        <h3
+          style={{
+            fontFamily: "'Space Grotesk', sans-serif",
+            fontSize: '1rem',
+            fontWeight: 700,
+            color: '#0f172a',
+            margin: '0 0 6px',
+            letterSpacing: '-0.01em',
+          }}
+        >
+          {cx.nombre}
+        </h3>
+        {cx.direccion && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 10 }}>
+            <MapPin size={13} color="#94a3b8" />
+            <span style={{ fontSize: '0.8rem', color: '#64748b' }}>{cx.direccion}</span>
+          </div>
+        )}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+              {[1, 2, 3, 4, 5].map((i) => (
+                <Star key={i} size={13} color="#f59e0b" fill={i <= 5 ? '#f59e0b' : 'none'} />
+              ))}
+              <span style={{ fontSize: '0.8rem', color: '#64748b', marginLeft: 3, fontWeight: 600 }}>—</span>
+            </div>
+            <span style={{ fontSize: '0.72rem', color: '#94a3b8', display: 'block', marginTop: 2 }}>
+              Nuevo en la plataforma
+            </span>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginBottom: 1 }}>desde</div>
+            <div
+              style={{
+                fontFamily: "'Space Grotesk', sans-serif",
+                fontSize: '1.1rem',
+                fontWeight: 800,
+                color: '#0f172a',
+              }}
+            >
+              {cx.priceFrom != null ? `$${cx.priceFrom.toLocaleString('es-AR')}` : '—'}
+            </div>
+          </div>
+        </div>
+        <div style={{ marginTop: 16 }}>
+          <div
+            style={{
+              width: '100%',
+              padding: '10px 14px',
+              borderRadius: 10,
+              background: '#2563eb',
+              color: 'white',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 6,
+              fontFamily: "'DM Sans', sans-serif",
+              fontSize: '0.88rem',
+              fontWeight: 700,
+              boxShadow: '0 4px 12px rgba(37,99,235,0.2)',
+            }}
+          >
+            Ver canchas
+            <ArrowRight size={15} />
+          </div>
+        </div>
+      </div>
+    </Link>
+  )
+}
+
+function CardSkeleton() {
+  return (
+    <div
+      style={{
+        background: 'white',
+        borderRadius: 16,
+        overflow: 'hidden',
+        border: '1px solid #f1f5f9',
+        boxShadow: '0 2px 16px rgba(0,0,0,0.05)',
+      }}
+    >
+      <div style={{ height: 200, background: '#f1f5f9' }} />
+      <div style={{ padding: '18px 20px 20px' }}>
+        <div style={{ height: 14, background: '#f1f5f9', borderRadius: 6, marginBottom: 10, width: '65%' }} />
+        <div style={{ height: 10, background: '#f1f5f9', borderRadius: 6, marginBottom: 16, width: '45%' }} />
+        <div style={{ height: 36, background: '#f1f5f9', borderRadius: 10 }} />
+      </div>
     </div>
   )
 }
 
 function EmptyState() {
   return (
-    <div className="rounded-2xl border border-dashed border-neutral-300 bg-white p-16 text-center">
-      <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-primary-50">
-        <LandPlot className="h-7 w-7 text-primary-500" />
+    <div
+      style={{
+        borderRadius: 16,
+        border: '1.5px dashed #cbd5e1',
+        background: 'white',
+        padding: 48,
+        textAlign: 'center',
+      }}
+    >
+      <div
+        style={{
+          width: 56,
+          height: 56,
+          margin: '0 auto 16px',
+          borderRadius: 99,
+          background: '#eff6ff',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <Building2 size={24} color="#2563eb" />
       </div>
-      <h3 className="text-lg font-bold text-neutral-900">
-        Todavía no hay complejos cargados
+      <h3
+        style={{
+          fontFamily: "'Space Grotesk', sans-serif",
+          fontSize: '1.05rem',
+          fontWeight: 800,
+          color: '#0f172a',
+          margin: '0 0 6px',
+        }}
+      >
+        No encontramos complejos
       </h3>
-      <p className="mx-auto mt-2 max-w-md text-sm text-neutral-500">
-        Volvé pronto. Si administrás un complejo y querés sumarte, contactanos.
+      <p style={{ color: '#64748b', fontSize: '0.9rem', maxWidth: 420, margin: '0 auto' }}>
+        Probá con otro filtro o volvé pronto — estamos sumando nuevos complejos todas las semanas.
       </p>
-      <div className="mt-5 flex items-center justify-center gap-3">
-        <a
-          href="https://wa.me/543435059834"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-400 transition-colors"
-        >
-          WhatsApp
-        </a>
-        <a
-          href="mailto:enzopitana@gmail.com"
-          className="inline-flex items-center gap-1.5 rounded-full border border-neutral-300 bg-white px-4 py-2 text-sm font-semibold text-neutral-700 hover:bg-neutral-50 transition-colors"
-        >
-          enzopitana@gmail.com
-        </a>
-      </div>
     </div>
   )
 }

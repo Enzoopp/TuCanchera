@@ -1,33 +1,46 @@
-// SRP: Página de reserva con calendario semanal.
-// - Obtiene la cancha por ID
-// - Muestra grid de slots por día de la semana
-// - Estados: libre (primary), ocupado (neutral), bloqueado (neutral)
-// - Al clickear un slot libre, abre ConfirmacionReservaModal
-// - Mobile-first: 1 día a la vez con flechas; desktop: 7 días
+// SRP: Página de reserva con grid semanal (7 días × slots/hora).
+// Diseño replicado de ReservarPage.jsx (pills por slot: libre/ocupado/bloqueado,
+// hover "Reservar", modal de confirmación de pago).
+// Preserva la lógica existente: useSlots + ConfirmacionReservaModal.
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/context/AuthContext'
 import { useTenant } from '@/context/TenantContext'
 import { useSlots } from '@/hooks/useSlots'
 import { fetchCanchaById } from '@/services/reservaService'
-import {
-  generarDiasSemana,
-  formatearFechaCorta,
-  formatearFechaLarga,
-  formatearDiaSemanaCorto,
-  formatearFechaISO,
-  esFechaPasada,
-  esHoy,
-} from '@/utils/fechas'
-import { tipoCanchaLabels } from '@/utils/canchaLabels'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Skeleton } from '@/components/ui/skeleton'
-import { ChevronLeft, ChevronRight, ArrowLeft, Clock, DollarSign } from 'lucide-react'
+import Navbar from '@/components/brand/Navbar'
+import SportIcon, { sportPalette, sportLabel } from '@/components/brand/SportIcon'
 import ConfirmacionReservaModal from '@/components/ConfirmacionReservaModal'
+import { Home, ChevronRight, ChevronLeft, Clock } from 'lucide-react'
+import { addDays, startOfWeek, isSameDay, differenceInCalendarDays, startOfDay } from 'date-fns'
 import type { Slot } from '@/types'
+
+const DAY_LABELS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
+const MONTH_NAMES = [
+  'enero',
+  'febrero',
+  'marzo',
+  'abril',
+  'mayo',
+  'junio',
+  'julio',
+  'agosto',
+  'septiembre',
+  'octubre',
+  'noviembre',
+  'diciembre',
+]
+
+function formatYMD(d: Date) {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${dd}`
+}
+
+type SlotWithFecha = { fecha: string; slot: Slot }
 
 export default function Reservar() {
   const { slug, canchaId } = useParams<{ slug: string; canchaId: string }>()
@@ -35,12 +48,9 @@ export default function Reservar() {
   const { user } = useAuth()
   const { complejo } = useTenant()
 
-  const [semanaBase, setSemanaBase] = useState(() => new Date())
-  const [diaMobile, setDiaMobile] = useState(() => new Date())
-  const [slotSeleccionado, setSlotSeleccionado] = useState<{
-    fecha: string
-    slot: Slot
-  } | null>(null)
+  const [weekOffset, setWeekOffset] = useState(0)
+  const [mobileDay, setMobileDay] = useState(0)
+  const [selected, setSelected] = useState<SlotWithFecha | null>(null)
 
   const { data: cancha, isLoading: loadingCancha } = useQuery({
     queryKey: ['cancha', canchaId],
@@ -48,35 +58,63 @@ export default function Reservar() {
     enabled: !!canchaId,
   })
 
-  const dias = generarDiasSemana(semanaBase)
+  // Calcula el lunes base de la semana mostrada
+  const weekDates = useMemo(() => {
+    const today = new Date()
+    const monday = startOfWeek(today, { weekStartsOn: 1 })
+    const shifted = addDays(monday, weekOffset * 7)
+    return Array.from({ length: 7 }, (_, i) => addDays(shifted, i))
+  }, [weekOffset])
+
+  const weekLabel = useMemo(() => {
+    const first = weekDates[0]
+    const last = weekDates[6]
+    return `Semana del ${first.getDate()} al ${last.getDate()} de ${MONTH_NAMES[last.getMonth()]}`
+  }, [weekDates])
 
   function handleSlotClick(fecha: string, slot: Slot) {
     if (slot.estado !== 'libre') return
-
     if (!user) {
       navigate('/login', {
         state: { from: { pathname: `/${slug}/reservar/${canchaId}` } },
       })
       return
     }
-
-    setSlotSeleccionado({ fecha, slot })
+    setSelected({ fecha, slot })
   }
 
-  if (loadingCancha) {
-    return <ReservarSkeleton slug={slug} />
-  }
+  if (loadingCancha) return <ReservarSkeleton />
 
   if (!cancha) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-neutral-100 px-4">
-        <div className="text-center">
-          <h1 className="text-2xl font-black text-neutral-900">Cancha no encontrada</h1>
+      <div style={{ background: '#f8fafc', minHeight: '100vh', fontFamily: "'DM Sans', sans-serif" }}>
+        <Navbar />
+        <div style={{ maxWidth: 600, margin: '80px auto', padding: 24, textAlign: 'center' }}>
+          <h1
+            style={{
+              fontFamily: "'Space Grotesk', sans-serif",
+              fontSize: '1.5rem',
+              fontWeight: 800,
+              color: '#0f172a',
+              marginBottom: 16,
+            }}
+          >
+            Cancha no encontrada
+          </h1>
           <Link
             to={`/${slug}`}
-            className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-primary-600 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-500 transition-colors"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '10px 18px',
+              borderRadius: 10,
+              background: '#2563eb',
+              color: 'white',
+              textDecoration: 'none',
+              fontWeight: 700,
+            }}
           >
-            <ArrowLeft className="h-4 w-4" />
             Volver al complejo
           </Link>
         </div>
@@ -84,275 +122,666 @@ export default function Reservar() {
     )
   }
 
+  const sport = sportLabel(cancha.tipo)
+  const pal = sportPalette(sport)
+
   return (
-    <div className="min-h-screen bg-neutral-100">
-      {/* Header */}
-      <header className="border-b border-neutral-200 bg-white shadow-sm">
-        <div className="mx-auto max-w-5xl px-4 py-4">
+    <div style={{ background: '#f8fafc', minHeight: '100vh', fontFamily: "'DM Sans', sans-serif" }}>
+      <Navbar />
+
+      <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 20px 60px' }}>
+        {/* Breadcrumb */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            marginBottom: 16,
+            fontSize: '0.82rem',
+            color: '#64748b',
+            flexWrap: 'wrap',
+          }}
+        >
+          <Link
+            to="/explorar"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              color: '#64748b',
+              textDecoration: 'none',
+            }}
+          >
+            <Home size={14} /> Inicio
+          </Link>
+          <ChevronRight size={13} color="#cbd5e1" />
           <Link
             to={`/${slug}`}
-            className="inline-flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-900 transition-colors"
+            style={{
+              color: '#64748b',
+              textDecoration: 'none',
+            }}
           >
-            <ArrowLeft className="h-4 w-4" />
-            {complejo?.nombre ?? 'Volver'}
+            {complejo?.nombre ?? 'Complejo'}
           </Link>
-
-          <div className="mt-3 flex items-start justify-between gap-4">
-            <div>
-              <h1 className="text-2xl font-black text-neutral-900">{cancha.nombre}</h1>
-              <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                <Badge variant="secondary" className="text-xs">
-                  {tipoCanchaLabels[cancha.tipo]}
-                </Badge>
-                <span className="flex items-center gap-1 text-sm text-neutral-500">
-                  <DollarSign className="h-3.5 w-3.5" />
-                  {cancha.precio.toLocaleString('es-AR')}
-                </span>
-                <span className="flex items-center gap-1 text-sm text-neutral-500">
-                  <Clock className="h-3.5 w-3.5" />
-                  {cancha.duracion_min} min
-                </span>
-              </div>
-            </div>
-          </div>
+          <ChevronRight size={13} color="#cbd5e1" />
+          <span style={{ color: '#0f172a', fontWeight: 600 }}>{cancha.nombre}</span>
         </div>
-      </header>
 
-      <div className="mx-auto max-w-5xl px-4 py-6">
-        {/* Desktop: semana */}
-        <div className="hidden sm:block">
-          <div className="mb-4 flex items-center justify-between">
-            <button
-              type="button"
-              onClick={() => setSemanaBase((d) => new Date(d.getTime() - 7 * 86400000))}
-              className="flex items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-700 shadow-sm hover:bg-neutral-50 transition-colors"
-            >
-              <ChevronLeft className="h-4 w-4" />
-              Anterior
-            </button>
-            <p className="text-sm font-semibold text-neutral-700">
-              {formatearFechaCorta(dias[0])} — {formatearFechaCorta(dias[6])}
-            </p>
-            <button
-              type="button"
-              onClick={() => setSemanaBase((d) => new Date(d.getTime() + 7 * 86400000))}
-              className="flex items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-700 shadow-sm hover:bg-neutral-50 transition-colors"
-            >
-              Siguiente
-              <ChevronRight className="h-4 w-4" />
-            </button>
+        {/* Court info card */}
+        <div
+          style={{
+            background: 'white',
+            borderRadius: 14,
+            padding: '18px 22px',
+            borderLeft: '4px solid #2563eb',
+            boxShadow: '0 1px 8px rgba(0,0,0,0.05)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 18,
+            flexWrap: 'wrap',
+            marginBottom: 28,
+          }}
+        >
+          <div
+            style={{
+              width: 48,
+              height: 48,
+              borderRadius: 12,
+              background: 'linear-gradient(135deg, #dbeafe, #bfdbfe)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+              color: pal.text,
+            }}
+          >
+            <SportIcon sport={sport} size={24} color={pal.text} />
           </div>
-
-          <div className="overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm">
-            {/* Días header */}
-            <div className="grid grid-cols-7 border-b border-neutral-100 bg-neutral-50">
-              {dias.map((dia) => (
-                <div
-                  key={dia.toISOString()}
-                  className="border-r border-neutral-100 px-2 py-3 text-center last:border-r-0"
-                >
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-neutral-400">
-                    {formatearDiaSemanaCorto(dia)}
-                  </p>
-                  <p
-                    className={`mt-0.5 text-xl font-black ${
-                      esHoy(dia) ? 'text-primary-600' : 'text-neutral-800'
-                    }`}
-                  >
-                    {dia.getDate()}
-                  </p>
-                  {esHoy(dia) && (
-                    <div className="mx-auto mt-0.5 h-1 w-1 rounded-full bg-primary-500" />
-                  )}
-                </div>
-              ))}
+          <div style={{ flex: 1, minWidth: 180 }}>
+            <h1
+              style={{
+                fontFamily: "'Space Grotesk', sans-serif",
+                fontSize: '1.25rem',
+                fontWeight: 800,
+                color: '#0f172a',
+                margin: '0 0 3px',
+                letterSpacing: '-0.02em',
+              }}
+            >
+              {cancha.nombre}
+            </h1>
+            <div
+              style={{
+                display: 'flex',
+                gap: 14,
+                alignItems: 'center',
+                fontSize: '0.82rem',
+                color: '#64748b',
+              }}
+            >
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                <Clock size={13} />
+                {cancha.duracion_min} min
+              </span>
+              <span>•</span>
+              <span>{sport}</span>
             </div>
-
-            {/* Slots grid */}
-            <div className="grid grid-cols-7">
-              {dias.map((dia) => (
-                <DiaColumna
-                  key={dia.toISOString()}
-                  dia={dia}
-                  canchaId={cancha.id}
-                  duracionMin={cancha.duracion_min}
-                  onSlotClick={handleSlotClick}
-                />
-              ))}
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>por turno</div>
+            <div
+              style={{
+                fontFamily: "'Space Grotesk', sans-serif",
+                fontSize: '1.5rem',
+                fontWeight: 800,
+                color: '#2563eb',
+                letterSpacing: '-0.02em',
+              }}
+            >
+              ${cancha.precio.toLocaleString('es-AR')}
             </div>
           </div>
         </div>
 
-        {/* Mobile: un día a la vez */}
-        <div className="sm:hidden">
-          <div className="mb-4 flex items-center gap-3">
+        {/* Week nav */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            marginBottom: 20,
+            flexWrap: 'wrap',
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              background: 'white',
+              borderRadius: 99,
+              padding: 4,
+              boxShadow: '0 1px 6px rgba(0,0,0,0.05)',
+              border: '1px solid #e2e8f0',
+            }}
+          >
             <button
               type="button"
-              onClick={() => setDiaMobile((d) => new Date(d.getTime() - 86400000))}
-              className="flex h-9 w-9 items-center justify-center rounded-lg border border-neutral-200 bg-white shadow-sm hover:bg-neutral-50 transition-colors"
+              onClick={() => setWeekOffset((o) => o - 1)}
+              style={navBtnStyle}
+              aria-label="Semana anterior"
             >
-              <ChevronLeft className="h-4 w-4 text-neutral-600" />
+              <ChevronLeft size={17} color="#475569" />
             </button>
-            <div className="flex-1 rounded-lg border border-neutral-200 bg-white px-4 py-2 text-center shadow-sm">
-              <p className="text-sm font-semibold text-neutral-900 capitalize">
-                {formatearFechaLarga(diaMobile)}
-              </p>
-              {esHoy(diaMobile) && (
-                <span className="text-xs font-medium text-primary-600">Hoy</span>
-              )}
-            </div>
+            <span
+              style={{
+                padding: '0 18px',
+                fontSize: '0.9rem',
+                fontWeight: 600,
+                color: '#0f172a',
+                fontFamily: "'Space Grotesk', sans-serif",
+              }}
+            >
+              {weekLabel}
+            </span>
             <button
               type="button"
-              onClick={() => setDiaMobile((d) => new Date(d.getTime() + 86400000))}
-              className="flex h-9 w-9 items-center justify-center rounded-lg border border-neutral-200 bg-white shadow-sm hover:bg-neutral-50 transition-colors"
+              onClick={() => setWeekOffset((o) => o + 1)}
+              style={navBtnStyle}
+              aria-label="Semana siguiente"
             >
-              <ChevronRight className="h-4 w-4 text-neutral-600" />
+              <ChevronRight size={17} color="#475569" />
             </button>
           </div>
-
-          <div className="overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm">
-            <DiaColumna
-              dia={diaMobile}
-              canchaId={cancha.id}
-              duracionMin={cancha.duracion_min}
-              onSlotClick={handleSlotClick}
-              fullWidth
-            />
+          <button
+            type="button"
+            onClick={() => setWeekOffset(0)}
+            style={{
+              padding: '8px 16px',
+              borderRadius: 10,
+              border: '1.5px solid #e2e8f0',
+              background: 'white',
+              color: '#374151',
+              fontFamily: "'DM Sans', sans-serif",
+              fontSize: '0.85rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            Hoy
+          </button>
+          <div
+            style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}
+            className="reservar-mobile-nav"
+          >
+            <button
+              type="button"
+              onClick={() => setMobileDay((d) => Math.max(0, d - 1))}
+              style={{ ...navBtnStyle, background: 'white', border: '1px solid #e2e8f0' }}
+              aria-label="Día anterior"
+            >
+              <ChevronLeft size={15} color="#475569" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setMobileDay((d) => Math.min(6, d + 1))}
+              style={{ ...navBtnStyle, background: 'white', border: '1px solid #e2e8f0' }}
+              aria-label="Día siguiente"
+            >
+              <ChevronRight size={15} color="#475569" />
+            </button>
           </div>
         </div>
 
-        {/* Leyenda */}
-        <div className="mt-4 flex flex-wrap items-center gap-4 rounded-xl border border-neutral-200 bg-white px-4 py-3 shadow-sm">
-          <div className="flex items-center gap-2">
-            <span className="inline-block h-3 w-3 rounded-sm bg-primary-400" />
-            <span className="text-xs text-neutral-600">Libre — hacé click para reservar</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="inline-block h-3 w-3 rounded-sm bg-neutral-300" />
-            <span className="text-xs text-neutral-600">Ocupado / Bloqueado</span>
-          </div>
+        {/* Legend */}
+        <div
+          style={{
+            display: 'flex',
+            gap: 16,
+            marginBottom: 18,
+            flexWrap: 'wrap',
+          }}
+        >
+          {[
+            { label: 'Libre', bg: '#dcfce7', dot: '#16a34a' },
+            { label: 'Ocupado', bg: '#fee2e2', dot: '#dc2626' },
+            { label: 'Bloqueado', bg: '#f1f5f9', dot: '#94a3b8' },
+          ].map((l) => (
+            <div
+              key={l.label}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 7,
+                fontSize: '0.8rem',
+                color: '#64748b',
+              }}
+            >
+              <span
+                style={{
+                  width: 12,
+                  height: 12,
+                  borderRadius: 4,
+                  background: l.bg,
+                  border: `1px solid ${l.dot}`,
+                }}
+              />
+              {l.label}
+            </div>
+          ))}
+        </div>
+
+        {/* Grid card — desktop (7 cols) */}
+        <div
+          className="reservar-desktop-grid"
+          style={{
+            background: 'white',
+            borderRadius: 16,
+            padding: 20,
+            boxShadow: '0 1px 10px rgba(0,0,0,0.05)',
+            border: '1px solid #f1f5f9',
+          }}
+        >
+          <WeekGrid
+            weekDates={weekDates}
+            canchaId={cancha.id}
+            duracionMin={cancha.duracion_min}
+            onSlotClick={handleSlotClick}
+          />
+        </div>
+
+        {/* Grid card — mobile (un día) */}
+        <div
+          className="reservar-mobile-grid"
+          style={{
+            background: 'white',
+            borderRadius: 16,
+            padding: 16,
+            boxShadow: '0 1px 10px rgba(0,0,0,0.05)',
+            border: '1px solid #f1f5f9',
+          }}
+        >
+          <MobileDayGrid
+            date={weekDates[mobileDay]}
+            dayLabel={DAY_LABELS[mobileDay]}
+            canchaId={cancha.id}
+            duracionMin={cancha.duracion_min}
+            onSlotClick={handleSlotClick}
+          />
         </div>
       </div>
 
-      {/* Modal de confirmación */}
-      {slotSeleccionado && cancha && (
+      {/* Modal de confirmación (reutiliza el existente) */}
+      {selected && cancha && (
         <ConfirmacionReservaModal
           cancha={cancha}
-          fecha={slotSeleccionado.fecha}
-          slot={slotSeleccionado.slot}
-          onClose={() => setSlotSeleccionado(null)}
+          fecha={selected.fecha}
+          slot={selected.slot}
+          onClose={() => setSelected(null)}
         />
       )}
+
+      <style>{`
+        .reservar-desktop-grid { display: block; }
+        .reservar-mobile-grid { display: none; }
+        .reservar-mobile-nav { display: none; }
+        @media (max-width: 768px) {
+          .reservar-desktop-grid { display: none; }
+          .reservar-mobile-grid { display: block; }
+          .reservar-mobile-nav { display: flex !important; }
+        }
+      `}</style>
     </div>
   )
 }
 
-function DiaColumna({
-  dia,
+const navBtnStyle: React.CSSProperties = {
+  width: 34,
+  height: 34,
+  borderRadius: 99,
+  border: 'none',
+  background: 'transparent',
+  cursor: 'pointer',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  transition: 'background 0.15s',
+}
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/* Week grid (desktop) — cada columna es un día, cada fila es una hora        */
+/* ─────────────────────────────────────────────────────────────────────────── */
+function WeekGrid({
+  weekDates,
   canchaId,
   duracionMin,
   onSlotClick,
-  fullWidth = false,
 }: {
-  dia: Date
+  weekDates: Date[]
   canchaId: string
   duracionMin: number
   onSlotClick: (fecha: string, slot: Slot) => void
-  fullWidth?: boolean
 }) {
-  const fechaISO = formatearFechaISO(dia)
-  const pasada = esFechaPasada(dia)
+  // Unimos los slots de cada día. Usamos 7 queries separadas (longitud estable).
+  const dayStrings = weekDates.map(formatYMD)
+  // Hook calls unrolled para cumplir las rules-of-hooks (longitud estable = 7).
+  const q0 = useSlots({ canchaId, fecha: dayStrings[0], duracionMin })
+  const q1 = useSlots({ canchaId, fecha: dayStrings[1], duracionMin })
+  const q2 = useSlots({ canchaId, fecha: dayStrings[2], duracionMin })
+  const q3 = useSlots({ canchaId, fecha: dayStrings[3], duracionMin })
+  const q4 = useSlots({ canchaId, fecha: dayStrings[4], duracionMin })
+  const q5 = useSlots({ canchaId, fecha: dayStrings[5], duracionMin })
+  const q6 = useSlots({ canchaId, fecha: dayStrings[6], duracionMin })
+  const dayQueries = [q0, q1, q2, q3, q4, q5, q6]
 
-  const { data: slots, isLoading } = useSlots({
-    canchaId,
-    fecha: fechaISO,
-    duracionMin,
+  // Recolectamos todas las horas únicas de toda la semana (por si los horarios
+  // difieren entre días de la semana)
+  const hoursSet = new Set<string>()
+  dayQueries.forEach((q) => {
+    ;(q.data || []).forEach((s) => hoursSet.add(s.horaInicio))
   })
+  const hours = Array.from(hoursSet).sort()
 
-  const borderClass = fullWidth ? '' : 'border-r border-neutral-100 last:border-r-0'
+  const today = startOfDay(new Date())
 
-  return (
-    <div className={`${borderClass} p-2`}>
-      {isLoading ? (
-        <div className="space-y-1.5 py-1">
-          {[1, 2, 3, 4].map((i) => (
-            <Skeleton key={i} className="h-9 w-full rounded-lg" />
-          ))}
-        </div>
-      ) : !slots || slots.length === 0 ? (
-        <p className="py-6 text-center text-xs text-neutral-400">
-          {fullWidth ? 'Sin horarios disponibles.' : '—'}
-        </p>
-      ) : (
-        <div className={`space-y-1.5 py-1 ${fullWidth ? 'grid grid-cols-3 gap-1.5 space-y-0' : ''}`}>
-          {slots.map((slot) => (
-            <SlotButton
-              key={`${fechaISO}-${slot.horaInicio}`}
-              slot={slot}
-              disabled={pasada}
-              fullWidth={fullWidth}
-              onClick={() => onSlotClick(fechaISO, slot)}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function SlotButton({
-  slot,
-  disabled,
-  fullWidth,
-  onClick,
-}: {
-  slot: Slot
-  disabled: boolean
-  fullWidth: boolean
-  onClick: () => void
-}) {
-  if (disabled || slot.estado !== 'libre') {
-    const isOcupado = slot.estado === 'ocupado'
+  if (hours.length === 0) {
     return (
-      <div
-        className={`flex items-center justify-center rounded-lg px-2 py-2 text-xs font-semibold ${
-          isOcupado
-            ? 'bg-neutral-100 text-neutral-400'
-            : 'bg-neutral-100 text-neutral-400'
-        } cursor-not-allowed ${fullWidth ? '' : 'w-full'}`}
-        title={isOcupado ? 'Ocupado' : slot.estado === 'bloqueado' ? 'Bloqueado' : undefined}
-      >
-        {slot.horaInicio.slice(0, 5)}
+      <div style={{ textAlign: 'center', padding: '60px 20px', color: '#64748b', fontSize: '0.9rem' }}>
+        Esta cancha no tiene horarios configurados esta semana.
       </div>
     )
   }
 
   return (
+    <div>
+      {/* Day headers */}
+      <div style={{ display: 'grid', gridTemplateColumns: '60px repeat(7, 1fr)', gap: 8, marginBottom: 14 }}>
+        <div />
+        {weekDates.map((d, i) => {
+          const isToday = isSameDay(d, today)
+          return (
+            <div key={i} style={{ textAlign: 'center' }}>
+              <div
+                style={{
+                  fontSize: '0.78rem',
+                  fontWeight: 600,
+                  color: '#64748b',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.06em',
+                }}
+              >
+                {DAY_LABELS[i]}
+              </div>
+              <div
+                style={{
+                  marginTop: 4,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: 30,
+                  height: 30,
+                  borderRadius: 8,
+                  background: isToday ? '#2563eb' : 'transparent',
+                  color: isToday ? 'white' : '#0f172a',
+                  fontWeight: 700,
+                  fontSize: '0.95rem',
+                  fontFamily: "'Space Grotesk', sans-serif",
+                }}
+              >
+                {d.getDate()}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Hours x days */}
+      {hours.map((h) => (
+        <div
+          key={h}
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '60px repeat(7, 1fr)',
+            gap: 8,
+            marginBottom: 8,
+            alignItems: 'center',
+          }}
+        >
+          <span
+            style={{
+              fontSize: '0.78rem',
+              color: '#94a3b8',
+              fontWeight: 600,
+              fontFamily: "'Space Grotesk', sans-serif",
+            }}
+          >
+            {h.slice(0, 5)}
+          </span>
+          {weekDates.map((d, di) => {
+            const fecha = dayStrings[di]
+            const slots = dayQueries[di].data || []
+            const slot = slots.find((s) => s.horaInicio === h)
+            const pastDay = differenceInCalendarDays(d, today) < 0
+            const effectiveState = pastDay ? 'ocupado' : slot?.estado
+            const effectiveSlot: Slot | undefined = slot
+              ? { ...slot, estado: pastDay ? 'ocupado' : slot.estado }
+              : undefined
+
+            return (
+              <SlotPill
+                key={`${fecha}-${h}`}
+                state={effectiveState as Slot['estado'] | undefined}
+                hour={h.slice(0, 5)}
+                onClick={() =>
+                  effectiveSlot && onSlotClick(fecha, effectiveSlot)
+                }
+              />
+            )
+          })}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/* Mobile day grid (1 column)                                                 */
+/* ─────────────────────────────────────────────────────────────────────────── */
+function MobileDayGrid({
+  date,
+  dayLabel,
+  canchaId,
+  duracionMin,
+  onSlotClick,
+}: {
+  date: Date
+  dayLabel: string
+  canchaId: string
+  duracionMin: number
+  onSlotClick: (fecha: string, slot: Slot) => void
+}) {
+  const fechaISO = formatYMD(date)
+  const today = startOfDay(new Date())
+  const pastDay = differenceInCalendarDays(date, today) < 0
+  const isToday = isSameDay(date, today)
+
+  const { data: slots } = useSlots({
+    canchaId,
+    fecha: fechaISO,
+    duracionMin,
+  })
+
+  return (
+    <div>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 10,
+          marginBottom: 20,
+          paddingBottom: 16,
+          borderBottom: '1px solid #f1f5f9',
+        }}
+      >
+        <div style={{ textAlign: 'center' }}>
+          <div
+            style={{
+              fontFamily: "'Space Grotesk', sans-serif",
+              fontSize: '1.1rem',
+              fontWeight: 800,
+              color: '#0f172a',
+              letterSpacing: '-0.01em',
+            }}
+          >
+            {dayLabel}
+          </div>
+          <div
+            style={{
+              marginTop: 4,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: 38,
+              height: 38,
+              borderRadius: 10,
+              background: isToday ? '#2563eb' : '#f1f5f9',
+              color: isToday ? 'white' : '#0f172a',
+              fontWeight: 700,
+              fontSize: '1.05rem',
+            }}
+          >
+            {date.getDate()}
+          </div>
+        </div>
+      </div>
+
+      {!slots || slots.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: 30, color: '#64748b', fontSize: '0.9rem' }}>
+          Sin horarios disponibles este día.
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gap: 10 }}>
+          {slots.map((s) => {
+            const effective: Slot = { ...s, estado: pastDay ? 'ocupado' : s.estado }
+            return (
+              <div
+                key={s.horaInicio}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '60px 1fr',
+                  alignItems: 'center',
+                  gap: 12,
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: '0.82rem',
+                    color: '#64748b',
+                    fontWeight: 600,
+                    fontFamily: "'Space Grotesk', sans-serif",
+                  }}
+                >
+                  {s.horaInicio.slice(0, 5)}
+                </span>
+                <SlotPill
+                  state={effective.estado}
+                  hour={s.horaInicio.slice(0, 5)}
+                  large
+                  onClick={() => onSlotClick(fechaISO, effective)}
+                />
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+/* SlotPill — botón por slot (libre/ocupado/bloqueado)                         */
+/* ─────────────────────────────────────────────────────────────────────────── */
+function SlotPill({
+  state,
+  hour,
+  onClick,
+  large = false,
+}: {
+  state: Slot['estado'] | undefined
+  hour: string
+  onClick: () => void
+  large?: boolean
+}) {
+  const [hovered, setHovered] = useState(false)
+  if (!state) {
+    return (
+      <div
+        style={{
+          width: '100%',
+          padding: large ? '14px 12px' : '9px 8px',
+          borderRadius: 10,
+          background: '#f8fafc',
+          color: '#cbd5e1',
+          fontSize: large ? '0.9rem' : '0.78rem',
+          fontWeight: 600,
+          textAlign: 'center',
+          border: '1px dashed #e2e8f0',
+        }}
+      >
+        —
+      </div>
+    )
+  }
+
+  const cfg =
+    state === 'libre'
+      ? { bg: '#dcfce7', text: '#16a34a', hoverBg: '#16a34a', hoverText: 'white', label: hour }
+      : state === 'ocupado'
+        ? { bg: '#fee2e2', text: '#dc2626', hoverBg: '#fee2e2', hoverText: '#dc2626', label: 'Ocupado' }
+        : { bg: '#f1f5f9', text: '#94a3b8', hoverBg: '#f1f5f9', hoverText: '#94a3b8', label: '—' }
+  const clickable = state === 'libre'
+
+  return (
     <button
       type="button"
-      onClick={onClick}
-      className={`flex items-center justify-center rounded-lg border border-primary-200 bg-primary-50 px-2 py-2 text-xs font-semibold text-primary-700 transition-colors hover:bg-primary-100 active:bg-primary-200 ${fullWidth ? '' : 'w-full'}`}
+      disabled={!clickable}
+      onClick={clickable ? onClick : undefined}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        width: '100%',
+        padding: large ? '14px 12px' : '9px 8px',
+        borderRadius: 10,
+        border: 'none',
+        background: hovered && clickable ? cfg.hoverBg : cfg.bg,
+        color: hovered && clickable ? cfg.hoverText : cfg.text,
+        fontFamily: "'DM Sans', sans-serif",
+        fontSize: large ? '0.95rem' : '0.82rem',
+        fontWeight: 700,
+        cursor: clickable ? 'pointer' : 'not-allowed',
+        transition: 'all 0.15s ease',
+        letterSpacing: '-0.01em',
+        boxShadow: hovered && clickable ? '0 4px 12px rgba(22,163,74,0.35)' : 'none',
+        transform: hovered && clickable ? 'translateY(-1px)' : 'none',
+      }}
     >
-      {slot.horaInicio.slice(0, 5)}
+      {hovered && clickable ? 'Reservar' : cfg.label}
     </button>
   )
 }
 
-function ReservarSkeleton({ slug }: { slug?: string }) {
+/* ─────────────────────────────────────────────────────────────────────────── */
+/* Skeleton                                                                   */
+/* ─────────────────────────────────────────────────────────────────────────── */
+function ReservarSkeleton() {
   return (
-    <div className="min-h-screen bg-neutral-100">
-      <header className="border-b border-neutral-200 bg-white shadow-sm">
-        <div className="mx-auto max-w-5xl px-4 py-4">
-          <Skeleton className="h-4 w-28" />
-          <div className="mt-3">
-            <Skeleton className="h-8 w-56" />
-            <Skeleton className="mt-2 h-4 w-40" />
-          </div>
-        </div>
-      </header>
-      <div className="mx-auto max-w-5xl px-4 py-6">
-        <Skeleton className="mb-4 h-10 w-full" />
-        <Skeleton className="h-96 w-full rounded-2xl" />
+    <div style={{ background: '#f8fafc', minHeight: '100vh', fontFamily: "'DM Sans', sans-serif" }}>
+      <Navbar />
+      <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 20px 60px' }}>
+        <div style={{ height: 90, background: '#f1f5f9', borderRadius: 14, marginBottom: 28 }} />
+        <div style={{ height: 40, background: '#f1f5f9', borderRadius: 14, marginBottom: 20, width: 320 }} />
+        <div style={{ height: 520, background: '#f1f5f9', borderRadius: 16 }} />
       </div>
     </div>
   )

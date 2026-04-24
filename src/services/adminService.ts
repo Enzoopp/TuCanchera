@@ -222,7 +222,7 @@ export async function eliminarBloqueo(id: string) {
 // ---------- Reservas (admin) ----------
 
 export interface ReservaAdmin extends Reserva {
-  canchas: { nombre: string; tipo: string } | null
+  canchas: { nombre: string; tipo: string; precio: number } | null
   profiles: { nombre: string; telefono: string | null; email: string | null } | null
 }
 
@@ -240,7 +240,7 @@ export async function fetchReservasDelComplejo(
     .select(
       `
       *,
-      canchas!inner ( nombre, tipo, complejo_id ),
+      canchas!inner ( nombre, tipo, complejo_id, precio ),
       profiles ( nombre, telefono, email )
       `
     )

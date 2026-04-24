@@ -1,36 +1,74 @@
-// SRP: Vista general del día para el admin.
-// Contadores rápidos, reservas del día agrupadas por cancha, accesos directos.
-// Los turnos pasados se muestran diferenciados con opción de marcar asistencia.
+// SRP: Vista general del día para el admin (diseño Claude AdminDashboard.jsx).
+// - Header con saludo + complejo + fecha
+// - 4 metric cards (reservas hoy, confirmadas, pendientes, ingresos)
+// - Lista de reservas del día con filtro por cancha
+// - Quick actions + mini calendar (sidebar derecha)
+// Preserva la lógica de asistencia + invalidación de queries.
 
-import { useState, useEffect } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import { useAuth } from '@/context/AuthContext'
 import { useMiComplejo } from '@/hooks/useMiComplejo'
-import { fetchReservasDelComplejo, registrarAsistencia } from '@/services/adminService'
+import {
+  fetchReservasDelComplejo,
+  registrarAsistencia,
+  type ReservaAdmin,
+} from '@/services/adminService'
 import { fetchCanchasByComplejo, fetchBloqueosByCancha } from '@/services/complejoService'
 import { formatearFechaISO } from '@/utils/fechas'
-import { tipoCanchaLabels } from '@/utils/canchaLabels'
-import { Badge } from '@/components/ui/badge'
-import { Skeleton } from '@/components/ui/skeleton'
+import SportIcon, { sportPalette, sportLabel } from '@/components/brand/SportIcon'
 import {
-  CheckCircle2,
+  Calendar,
+  Check,
   Clock,
+  CircleDollarSign,
   Ban,
-  CalendarX,
   BarChart3,
-  ArrowRight,
-  DollarSign,
+  Plus,
+  ChevronLeft,
+  ChevronRight,
   UserCheck,
   UserX,
 } from 'lucide-react'
+import type { TipoCancha } from '@/types'
+
+const DAY_INITIALS = ['L', 'M', 'M', 'J', 'V', 'S', 'D']
+const MONTHS_LONG = [
+  'enero',
+  'febrero',
+  'marzo',
+  'abril',
+  'mayo',
+  'junio',
+  'julio',
+  'agosto',
+  'septiembre',
+  'octubre',
+  'noviembre',
+  'diciembre',
+]
+const DAYS_LONG = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
+
+function saludoActual(d: Date): string {
+  const h = d.getHours()
+  if (h < 12) return 'Buenos días'
+  if (h < 19) return 'Buenas tardes'
+  return 'Buenas noches'
+}
+
+function primerNombre(n: string | null | undefined): string {
+  if (!n) return ''
+  return n.trim().split(/\s+/)[0]
+}
 
 export default function Dashboard() {
+  const { profile } = useAuth()
   const { data: complejo, isLoading: loadingCx } = useMiComplejo()
   const queryClient = useQueryClient()
   const hoy = formatearFechaISO(new Date())
 
-  // Tick de 1 minuto para re-evaluar qué turnos ya pasaron
   const [ahora, setAhora] = useState(() => new Date())
   useEffect(() => {
     const id = setInterval(() => setAhora(new Date()), 60_000)
@@ -54,13 +92,13 @@ export default function Dashboard() {
     queryKey: ['admin-bloqueos-hoy', complejo?.id, hoy, canchas?.length],
     queryFn: async () => {
       if (!canchas) return []
-      const arrs = await Promise.all(
-        canchas.map((c) => fetchBloqueosByCancha(c.id, hoy))
-      )
+      const arrs = await Promise.all(canchas.map((c) => fetchBloqueosByCancha(c.id, hoy)))
       return arrs.flat()
     },
     enabled: !!canchas && canchas.length > 0,
   })
+
+  const [canchaFilter, setCanchaFilter] = useState<string>('todas')
 
   function turnoPasado(fecha: string, horaFin: string): boolean {
     const fin = new Date(`${fecha}T${horaFin.slice(0, 5)}:00`)
@@ -70,7 +108,6 @@ export default function Dashboard() {
   async function handleAsistencia(id: string, valor: boolean) {
     try {
       await registrarAsistencia(id, valor)
-      // Invalida ambas caches para que Dashboard y Reservas queden sincronizados
       await queryClient.invalidateQueries({ queryKey: ['admin-dashboard-reservas'] })
       await queryClient.invalidateQueries({ queryKey: ['admin-reservas'] })
       toast.success(valor ? 'Marcado como presente ✓' : 'Marcado como ausente')
@@ -79,338 +116,847 @@ export default function Dashboard() {
     }
   }
 
-  if (loadingCx || loadingR) {
+  const lista = useMemo(() => {
+    const items = reservas ?? []
+    return items
+      .filter((r) => r.estado !== 'cancelada_admin')
+      .filter((r) => canchaFilter === 'todas' || r.cancha_id === canchaFilter)
+      .sort((a, b) => a.hora_inicio.localeCompare(b.hora_inicio))
+  }, [reservas, canchaFilter])
+
+  const confirmadas = (reservas ?? []).filter((r) => r.estado === 'confirmada')
+  const pendientes = (reservas ?? []).filter((r) => r.estado === 'pendiente_pago')
+  const bloqueadasCount = bloqueos?.length ?? 0
+  const ingresosDia = confirmadas.reduce((acc, r) => acc + (((r as any).canchas?.precio ?? 0) as number), 0)
+
+  const fechaDisplay = `${DAYS_LONG[ahora.getDay()]}, ${ahora.getDate()} de ${MONTHS_LONG[ahora.getMonth()]} de ${ahora.getFullYear()}`
+
+  if (loadingCx) {
     return (
-      <div className="space-y-6">
-        <div>
-          <Skeleton className="h-8 w-48" />
-          <Skeleton className="mt-2 h-4 w-40" />
-        </div>
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          {[0, 1, 2, 3].map((i) => (
-            <Skeleton key={i} className="h-28 rounded-2xl" />
-          ))}
-        </div>
-        <Skeleton className="h-64 rounded-2xl" />
+      <div style={{ padding: 32, fontFamily: "'DM Sans', sans-serif", color: '#64748b' }}>
+        Cargando complejo…
       </div>
     )
   }
 
-  const confirmadas = reservas?.filter((r) => r.estado === 'confirmada') ?? []
-  const pendientes = reservas?.filter((r) => r.estado === 'pendiente_pago') ?? []
-  const bloqueadasCount = bloqueos?.length ?? 0
+  return (
+    <div
+      style={{
+        padding: 'clamp(20px, 4vw, 32px)',
+        paddingBottom: 60,
+        maxWidth: 1400,
+        margin: '0 auto',
+        fontFamily: "'DM Sans', sans-serif",
+      }}
+    >
+      {/* Header */}
+      <div style={{ marginBottom: 28 }}>
+        <h1
+          style={{
+            fontFamily: "'Space Grotesk', sans-serif",
+            fontSize: 'clamp(1.5rem, 3vw, 1.9rem)',
+            fontWeight: 800,
+            color: '#0f172a',
+            letterSpacing: '-0.03em',
+            margin: '0 0 6px',
+          }}
+        >
+          {saludoActual(ahora)}
+          {profile?.nombre ? `, ${primerNombre(profile.nombre)}` : ''}{' '}
+          <span style={{ display: 'inline-block', animation: 'wave 2s ease infinite' }}>👋</span>
+        </h1>
+        <p style={{ color: '#64748b', fontSize: '0.92rem', margin: 0 }}>
+          {fechaDisplay}
+          {complejo?.nombre && (
+            <>
+              {' · '}
+              <span style={{ color: '#2563eb', fontWeight: 600 }}>
+                Complejo {complejo.nombre}
+              </span>
+            </>
+          )}
+        </p>
+      </div>
 
-  // Ingresos del día (solo confirmadas)
-  const ingresosDia = confirmadas.reduce((acc, r) => acc + (r.canchas?.precio ?? 0), 0)
+      {/* Metric cards */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+          gap: 16,
+          marginBottom: 28,
+        }}
+      >
+        <MetricCard
+          label="Reservas hoy"
+          value={loadingR ? '—' : reservas?.length ?? 0}
+          icon={<Calendar size={18} />}
+          accent="#2563eb"
+          accentBg="#eff6ff"
+        />
+        <MetricCard
+          label="Confirmadas"
+          value={loadingR ? '—' : confirmadas.length}
+          icon={<Check size={18} />}
+          accent="#16a34a"
+          accentBg="#dcfce7"
+        />
+        <MetricCard
+          label="Pendientes"
+          value={loadingR ? '—' : pendientes.length}
+          icon={<Clock size={18} />}
+          accent="#d97706"
+          accentBg="#fef3c7"
+        />
+        <MetricCard
+          label="Ingresos hoy"
+          value={loadingR ? '—' : `$${(ingresosDia / 1000).toFixed(1)}k`}
+          icon={<CircleDollarSign size={18} />}
+          accent="#1e3a8a"
+          accentBg="#dbeafe"
+        />
+      </div>
 
-  // Separar reservas en próximas vs finalizadas
-  const activas = [...confirmadas, ...pendientes]
+      {/* Main grid */}
+      <div
+        className="dashboard-main-grid"
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'minmax(0, 1.5fr) minmax(0, 1fr)',
+          gap: 24,
+        }}
+      >
+        {/* Left: reservations list */}
+        <div
+          style={{
+            background: 'white',
+            borderRadius: 16,
+            border: '1px solid #f1f5f9',
+            boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
+            overflow: 'hidden',
+            minWidth: 0,
+          }}
+        >
+          <div style={{ padding: '18px 22px 14px', borderBottom: '1px solid #f1f5f9' }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: 14,
+                gap: 12,
+                flexWrap: 'wrap',
+              }}
+            >
+              <h3
+                style={{
+                  fontFamily: "'Space Grotesk', sans-serif",
+                  fontSize: '1.1rem',
+                  fontWeight: 800,
+                  color: '#0f172a',
+                  letterSpacing: '-0.02em',
+                  margin: 0,
+                }}
+              >
+                Reservas de hoy
+              </h3>
+              <span style={{ fontSize: '0.8rem', color: '#64748b' }}>
+                {lista.length} reserva{lista.length !== 1 ? 's' : ''}
+              </span>
+            </div>
 
-  // Agrupar por cancha
-  function agruparPorCancha(lista: typeof activas) {
-    const map = new Map<string, typeof activas>()
-    for (const r of lista) {
-      if (!map.has(r.cancha_id)) map.set(r.cancha_id, [])
-      map.get(r.cancha_id)!.push(r)
-    }
-    return map
-  }
+            {/* Court filter chips */}
+            <div
+              style={{
+                display: 'flex',
+                gap: 6,
+                overflowX: 'auto',
+                paddingBottom: 2,
+                scrollbarWidth: 'thin',
+              }}
+            >
+              <FilterChip
+                active={canchaFilter === 'todas'}
+                onClick={() => setCanchaFilter('todas')}
+              >
+                Todas
+              </FilterChip>
+              {(canchas ?? []).map((c) => (
+                <FilterChip
+                  key={c.id}
+                  active={canchaFilter === c.id}
+                  onClick={() => setCanchaFilter(c.id)}
+                >
+                  {c.nombre}
+                </FilterChip>
+              ))}
+            </div>
+          </div>
 
-  const proximas = activas.filter((r) => !turnoPasado(r.fecha, r.hora_fin))
-  const finalizadas = activas.filter((r) => turnoPasado(r.fecha, r.hora_fin))
+          {loadingR ? (
+            <div style={{ padding: '40px 30px', textAlign: 'center', color: '#64748b' }}>
+              Cargando reservas…
+            </div>
+          ) : lista.length === 0 ? (
+            <EmptyReservas />
+          ) : (
+            <div>
+              {lista.map((r, i) => (
+                <ReservaRow
+                  key={r.id}
+                  reserva={r}
+                  isLast={i === lista.length - 1}
+                  pasado={turnoPasado(r.fecha, r.hora_fin)}
+                  onAsistencia={handleAsistencia}
+                />
+              ))}
+            </div>
+          )}
+        </div>
 
-  const porCanchaProximas = agruparPorCancha(proximas)
-  const porCanchaFinalizadas = agruparPorCancha(finalizadas)
+        {/* Right: quick actions + mini calendar */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 20, minWidth: 0 }}>
+          <QuickActionsCard />
+          <MiniCalendar
+            ahora={ahora}
+            reservasCount={reservas?.length ?? 0}
+            bloqueosCount={bloqueadasCount}
+          />
+        </div>
+      </div>
 
-  const fechaDisplay = new Date().toLocaleDateString('es-AR', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-  })
+      <style>{`
+        @media (max-width: 980px) {
+          .dashboard-main-grid {
+            grid-template-columns: minmax(0, 1fr) !important;
+          }
+        }
+      `}</style>
+    </div>
+  )
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                Sub-components                              */
+/* -------------------------------------------------------------------------- */
+
+function MetricCard({
+  label,
+  value,
+  icon,
+  accent,
+  accentBg,
+}: {
+  label: string
+  value: string | number
+  icon: React.ReactNode
+  accent: string
+  accentBg: string
+}) {
+  return (
+    <div
+      style={{
+        background: 'white',
+        borderRadius: 16,
+        padding: '20px 22px',
+        position: 'relative',
+        overflow: 'hidden',
+        boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
+        border: '1px solid #f1f5f9',
+        borderTop: `3px solid ${accent}`,
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          marginBottom: 12,
+        }}
+      >
+        <span
+          style={{
+            fontSize: '0.78rem',
+            color: '#64748b',
+            fontWeight: 600,
+            textTransform: 'uppercase',
+            letterSpacing: '0.05em',
+          }}
+        >
+          {label}
+        </span>
+        <div
+          style={{
+            width: 36,
+            height: 36,
+            borderRadius: 10,
+            background: accentBg,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: accent,
+          }}
+        >
+          {icon}
+        </div>
+      </div>
+      <div
+        style={{
+          fontFamily: "'Space Grotesk', sans-serif",
+          fontSize: '2rem',
+          fontWeight: 800,
+          color: '#0f172a',
+          letterSpacing: '-0.03em',
+          lineHeight: 1,
+        }}
+      >
+        {value}
+      </div>
+    </div>
+  )
+}
+
+function FilterChip({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        padding: '5px 12px',
+        borderRadius: 99,
+        border: '1.5px solid',
+        borderColor: active ? '#2563eb' : '#e2e8f0',
+        background: active ? '#2563eb' : 'white',
+        color: active ? 'white' : '#475569',
+        fontFamily: "'DM Sans', sans-serif",
+        fontSize: '0.76rem',
+        fontWeight: 600,
+        cursor: 'pointer',
+        whiteSpace: 'nowrap',
+        flexShrink: 0,
+        transition: 'all 0.15s',
+      }}
+    >
+      {children}
+    </button>
+  )
+}
+
+const STATUS_BADGE: Record<string, { bg: string; color: string; label: string }> = {
+  confirmada: { bg: '#dbeafe', color: '#1d4ed8', label: 'Confirmada' },
+  pendiente_pago: { bg: '#fef3c7', color: '#92400e', label: 'Pendiente' },
+  cancelada_admin: { bg: '#fee2e2', color: '#b91c1c', label: 'Cancelada' },
+}
+
+function ReservaRow({
+  reserva: r,
+  isLast,
+  pasado,
+  onAsistencia,
+}: {
+  reserva: ReservaAdmin
+  isLast: boolean
+  pasado: boolean
+  onAsistencia: (id: string, valor: boolean) => void
+}) {
+  const cancha = (r as any).canchas as { nombre?: string; tipo?: TipoCancha } | null
+  const cliente = (r as any).profiles as { nombre?: string; telefono?: string | null } | null
+  const tipoSport = cancha?.tipo ? sportLabel(cancha.tipo as TipoCancha) : 'Fútbol 5'
+  const palette = sportPalette(tipoSport)
+  const status = STATUS_BADGE[r.estado] ?? STATUS_BADGE.pendiente_pago
+  const esEnLugar = r.metodo_pago === 'en_lugar'
+  const necesitaAsistencia =
+    esEnLugar && pasado && r.estado === 'confirmada' && r.asistio === null
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-black text-neutral-900">Dashboard</h1>
-          <p className="mt-0.5 text-sm text-neutral-500 capitalize">{fechaDisplay}</p>
-        </div>
-        <div className="flex gap-2">
-          <Link
-            to="/admin/bloqueos"
-            className="flex items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-700 shadow-sm transition-colors hover:bg-neutral-50"
-          >
-            <CalendarX className="h-4 w-4" />
-            <span className="hidden sm:inline">Bloquear turno</span>
-          </Link>
-          <Link
-            to="/admin/estadisticas"
-            className="flex items-center gap-1.5 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-700 shadow-sm transition-colors hover:bg-neutral-50"
-          >
-            <BarChart3 className="h-4 w-4" />
-            <span className="hidden sm:inline">Estadísticas</span>
-          </Link>
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 14,
+        padding: '14px 22px',
+        borderBottom: isLast ? 'none' : '1px solid #f1f5f9',
+        transition: 'background 0.15s',
+        opacity: pasado ? 0.85 : 1,
+      }}
+      onMouseEnter={(e) => (e.currentTarget.style.background = '#fafbfc')}
+      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+    >
+      {/* Time */}
+      <div
+        style={{
+          width: 56,
+          flexShrink: 0,
+          textAlign: 'center',
+          padding: '8px 4px',
+          borderRadius: 10,
+          background: pasado ? '#e2e8f0' : '#f1f5f9',
+        }}
+      >
+        <div
+          style={{
+            fontFamily: "'Space Grotesk', sans-serif",
+            fontSize: '0.95rem',
+            fontWeight: 800,
+            color: pasado ? '#64748b' : '#0f172a',
+            letterSpacing: '-0.02em',
+          }}
+        >
+          {r.hora_inicio.slice(0, 5)}
         </div>
       </div>
 
-      {/* Stat cards */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <StatCard
-          label="Confirmadas"
-          value={confirmadas.length}
-          icon={CheckCircle2}
-          color="text-emerald-600"
-          bg="bg-emerald-50"
-          border="border-emerald-200"
-        />
-        <StatCard
-          label="Pendientes"
-          value={pendientes.length}
-          icon={Clock}
-          color="text-amber-600"
-          bg="bg-amber-50"
-          border="border-amber-200"
-        />
-        <StatCard
-          label="Bloqueos"
-          value={bloqueadasCount}
-          icon={Ban}
-          color="text-neutral-600"
-          bg="bg-neutral-100"
-          border="border-neutral-200"
-        />
-        <StatCard
-          label="Ingresos hoy"
-          value={`$${ingresosDia.toLocaleString('es-AR')}`}
-          icon={DollarSign}
-          color="text-primary-600"
-          bg="bg-primary-50"
-          border="border-primary-200"
-          isString
-        />
+      {/* Sport tile */}
+      <div
+        style={{
+          width: 32,
+          height: 32,
+          borderRadius: 10,
+          flexShrink: 0,
+          background: palette.bg,
+          color: palette.text,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <SportIcon sport={tipoSport} size={16} />
       </div>
 
-      {/* Próximos turnos */}
-      <section>
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-base font-bold text-neutral-900">Próximos turnos</h2>
-          <Link
-            to="/admin/reservas"
-            className="flex items-center gap-1 text-sm font-medium text-primary-600 hover:text-primary-500 transition-colors"
-          >
-            Ver todas
-            <ArrowRight className="h-3.5 w-3.5" />
-          </Link>
+      {/* Info */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div
+          style={{
+            fontSize: '0.88rem',
+            fontWeight: 700,
+            color: '#0f172a',
+            lineHeight: 1.3,
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
+          {cliente?.nombre ?? 'Cliente'}
         </div>
+        <div
+          style={{
+            fontSize: '0.76rem',
+            color: '#64748b',
+            display: 'flex',
+            gap: 8,
+            alignItems: 'center',
+            marginTop: 2,
+            flexWrap: 'wrap',
+          }}
+        >
+          <span>{cancha?.nombre ?? '—'}</span>
+          {cliente?.telefono && (
+            <>
+              <span>•</span>
+              <span>{cliente.telefono}</span>
+            </>
+          )}
+        </div>
+      </div>
 
-        {proximas.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-neutral-300 bg-white p-8 text-center">
-            <p className="text-sm font-medium text-neutral-500">No hay turnos próximos para hoy.</p>
-            <p className="mt-1 text-xs text-neutral-400">
-              {finalizadas.length > 0
-                ? 'Todos los turnos del día ya finalizaron.'
-                : 'Las reservas aparecerán acá cuando los clientes reserven.'}
-            </p>
-          </div>
-        ) : (
-          <GruposCanchas
-            canchas={canchas ?? []}
-            porCancha={porCanchaProximas}
-            turnoPasado={turnoPasado}
-            onAsistencia={handleAsistencia}
-          />
-        )}
-      </section>
-
-      {/* Turnos finalizados (solo si hay) */}
-      {finalizadas.length > 0 && (
-        <section>
-          <h2 className="mb-3 text-base font-bold text-neutral-900">
-            Turnos finalizados
-            <span className="ml-2 text-sm font-normal text-neutral-400">— registrá la asistencia</span>
-          </h2>
-          <GruposCanchas
-            canchas={canchas ?? []}
-            porCancha={porCanchaFinalizadas}
-            turnoPasado={turnoPasado}
-            onAsistencia={handleAsistencia}
-            pasados
-          />
-        </section>
+      {/* Asistencia o badge */}
+      {necesitaAsistencia ? (
+        <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+          <button
+            onClick={() => onAsistencia(r.id, true)}
+            title="Sí vino"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              padding: '6px 10px',
+              borderRadius: 8,
+              border: '1px solid #bbf7d0',
+              background: '#dcfce7',
+              color: '#15803d',
+              fontFamily: "'DM Sans', sans-serif",
+              fontSize: '0.76rem',
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            <UserCheck size={13} />
+            Sí
+          </button>
+          <button
+            onClick={() => onAsistencia(r.id, false)}
+            title="No se presentó"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              padding: '6px 10px',
+              borderRadius: 8,
+              border: '1px solid #fecaca',
+              background: '#fee2e2',
+              color: '#b91c1c',
+              fontFamily: "'DM Sans', sans-serif",
+              fontSize: '0.76rem',
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            <UserX size={13} />
+            No
+          </button>
+        </div>
+      ) : r.asistio !== null ? (
+        <span
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 5,
+            padding: '5px 10px',
+            borderRadius: 99,
+            background: r.asistio ? '#dcfce7' : '#fee2e2',
+            color: r.asistio ? '#15803d' : '#b91c1c',
+            fontSize: '0.74rem',
+            fontWeight: 700,
+            flexShrink: 0,
+          }}
+        >
+          {r.asistio ? <UserCheck size={12} /> : <UserX size={12} />}
+          {r.asistio ? 'Asistió' : 'No vino'}
+        </span>
+      ) : (
+        <span
+          style={{
+            display: 'inline-flex',
+            padding: '5px 10px',
+            borderRadius: 99,
+            background: status.bg,
+            color: status.color,
+            fontSize: '0.74rem',
+            fontWeight: 700,
+            flexShrink: 0,
+          }}
+        >
+          {status.label}
+        </span>
       )}
     </div>
   )
 }
 
-// ─── Sub-componente: lista de canchas con sus reservas ────────────────────────
-
-import type { ReservaAdmin } from '@/services/adminService'
-import type { Cancha } from '@/types'
-
-function GruposCanchas({
-  canchas,
-  porCancha,
-  turnoPasado,
-  onAsistencia,
-  pasados = false,
-}: {
-  canchas: Cancha[]
-  porCancha: Map<string, ReservaAdmin[]>
-  turnoPasado: (fecha: string, horaFin: string) => boolean
-  onAsistencia: (id: string, valor: boolean) => void
-  pasados?: boolean
-}) {
+function EmptyReservas() {
   return (
-    <div className="space-y-3">
-      {canchas.map((c) => {
-        const lista = (porCancha.get(c.id) ?? []).sort((a, b) =>
-          a.hora_inicio.localeCompare(b.hora_inicio)
-        )
-        if (lista.length === 0) return null
-
-        return (
-          <div
-            key={c.id}
-            className={`overflow-hidden rounded-2xl border bg-white shadow-sm ${
-              pasados ? 'border-neutral-200 opacity-90' : 'border-neutral-200'
-            }`}
-          >
-            {/* Cancha header */}
-            <div className="flex items-center justify-between border-b border-neutral-100 bg-neutral-50 px-4 py-3">
-              <div>
-                <h3 className="text-sm font-bold text-neutral-900">{c.nombre}</h3>
-                <p className="text-xs text-neutral-500">{tipoCanchaLabels[c.tipo]}</p>
-              </div>
-              <span className="rounded-full bg-primary-100 px-2.5 py-0.5 text-xs font-semibold text-primary-700">
-                {lista.length} {lista.length === 1 ? 'turno' : 'turnos'}
-              </span>
-            </div>
-
-            <ul className="divide-y divide-neutral-100">
-              {lista.map((r) => {
-                const esEnLugar = r.metodo_pago === 'en_lugar'
-                const pasado = turnoPasado(r.fecha, r.hora_fin)
-                const necesitaAsistencia = esEnLugar && pasado && r.estado === 'confirmada' && r.asistio === null
-
-                return (
-                  <li
-                    key={r.id}
-                    className={`flex items-center justify-between gap-3 px-4 py-3 ${
-                      pasado ? 'bg-neutral-50/60' : ''
-                    }`}
-                  >
-                    {/* Hora */}
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div
-                        className={`flex h-9 w-14 shrink-0 items-center justify-center rounded-lg text-sm font-black ${
-                          pasado
-                            ? 'bg-neutral-200 text-neutral-500'
-                            : 'bg-neutral-100 text-neutral-900'
-                        }`}
-                      >
-                        {r.hora_inicio.slice(0, 5)}
-                      </div>
-                      <div className="min-w-0">
-                        <p className={`truncate text-sm font-medium ${pasado ? 'text-neutral-500' : 'text-neutral-900'}`}>
-                          {r.profiles?.nombre ?? 'Cliente'}
-                        </p>
-                        <p className="text-xs text-neutral-400">
-                          {r.metodo_pago === 'mercadopago' ? 'MercadoPago' : 'Paga en el lugar'}
-                          {' · '}
-                          {r.hora_inicio.slice(0, 5)}–{r.hora_fin.slice(0, 5)}
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Derecha: asistencia o badge de estado */}
-                    <div className="flex shrink-0 items-center gap-2">
-                      {necesitaAsistencia ? (
-                        <>
-                          <span className="text-[10px] font-semibold uppercase tracking-wide text-neutral-400">
-                            ¿Vino?
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => onAsistencia(r.id, true)}
-                            title="Sí vino"
-                            className="flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700 transition-colors hover:bg-emerald-100"
-                          >
-                            <UserCheck className="h-3.5 w-3.5" />
-                            Sí
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => onAsistencia(r.id, false)}
-                            title="No se presentó"
-                            className="flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-xs font-semibold text-red-600 transition-colors hover:bg-red-100"
-                          >
-                            <UserX className="h-3.5 w-3.5" />
-                            No
-                          </button>
-                        </>
-                      ) : r.asistio !== null ? (
-                        <span
-                          className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                            r.asistio
-                              ? 'bg-emerald-100 text-emerald-700'
-                              : 'bg-red-100 text-red-600'
-                          }`}
-                        >
-                          {r.asistio ? (
-                            <><UserCheck className="h-3 w-3" /> Asistió</>
-                          ) : (
-                            <><UserX className="h-3 w-3" /> No asistió</>
-                          )}
-                        </span>
-                      ) : (
-                        <Badge
-                          variant={r.estado === 'confirmada' ? 'default' : 'secondary'}
-                          className="shrink-0"
-                        >
-                          {r.estado === 'confirmada' ? 'Confirmada' : 'Pendiente'}
-                        </Badge>
-                      )}
-                    </div>
-                  </li>
-                )
-              })}
-            </ul>
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
-// ─── StatCard ─────────────────────────────────────────────────────────────────
-
-function StatCard({
-  label,
-  value,
-  icon: Icon,
-  color,
-  bg,
-  border,
-  isString = false,
-}: {
-  label: string
-  value: number | string
-  icon: React.ComponentType<{ className?: string }>
-  color: string
-  bg: string
-  border: string
-  isString?: boolean
-}) {
-  return (
-    <div className={`rounded-2xl border ${border} ${bg} p-4 shadow-sm`}>
-      <div className={`inline-flex rounded-lg p-2 ${bg}`}>
-        <Icon className={`h-5 w-5 ${color}`} />
-      </div>
-      <p className={`mt-3 ${isString ? 'text-xl' : 'text-3xl'} font-black text-neutral-900`}>
-        {value}
+    <div style={{ padding: '60px 30px', textAlign: 'center' }}>
+      <svg
+        width="80"
+        height="80"
+        viewBox="0 0 80 80"
+        style={{ margin: '0 auto 16px', opacity: 0.4 }}
+      >
+        <rect x="10" y="15" width="60" height="50" rx="6" fill="none" stroke="#cbd5e1" strokeWidth="2" />
+        <line x1="10" y1="28" x2="70" y2="28" stroke="#cbd5e1" strokeWidth="2" />
+        <circle cx="25" cy="20" r="2" fill="#cbd5e1" />
+        <circle cx="55" cy="20" r="2" fill="#cbd5e1" />
+      </svg>
+      <p style={{ color: '#64748b', fontSize: '0.9rem', margin: 0 }}>
+        No hay reservas para mostrar.
       </p>
-      <p className="mt-0.5 text-xs text-neutral-500">{label}</p>
+      <p style={{ color: '#94a3b8', fontSize: '0.8rem', margin: '4px 0 0' }}>
+        Las reservas aparecerán acá cuando los clientes reserven.
+      </p>
     </div>
   )
 }
+
+function QuickActionsCard() {
+  const actions = [
+    {
+      to: '/admin/bloqueos',
+      icon: <Ban size={17} />,
+      label: 'Bloquear turno',
+      desc: 'Marcar horario no disponible',
+      accent: '#dc2626',
+      bg: '#fef2f2',
+    },
+    {
+      to: '/admin/estadisticas',
+      icon: <BarChart3 size={17} />,
+      label: 'Ver estadísticas',
+      desc: 'Ingresos, ocupación y más',
+      accent: '#7c3aed',
+      bg: '#f5f3ff',
+    },
+    {
+      to: '/admin/canchas',
+      icon: <Plus size={17} />,
+      label: 'Agregar cancha',
+      desc: 'Sumar una cancha al complejo',
+      accent: '#2563eb',
+      bg: '#eff6ff',
+    },
+  ] as const
+
+  return (
+    <div
+      style={{
+        background: 'white',
+        borderRadius: 16,
+        padding: 20,
+        border: '1px solid #f1f5f9',
+        boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
+      }}
+    >
+      <h3
+        style={{
+          fontFamily: "'Space Grotesk', sans-serif",
+          fontSize: '1rem',
+          fontWeight: 800,
+          color: '#0f172a',
+          letterSpacing: '-0.02em',
+          margin: '0 0 14px',
+        }}
+      >
+        Acciones rápidas
+      </h3>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {actions.map((a) => (
+          <Link
+            key={a.to}
+            to={a.to}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              padding: '12px 14px',
+              borderRadius: 12,
+              border: '1px solid #f1f5f9',
+              background: 'white',
+              fontFamily: "'DM Sans', sans-serif",
+              textAlign: 'left',
+              transition: 'all 0.15s',
+              textDecoration: 'none',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = a.bg
+              e.currentTarget.style.borderColor = a.accent
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'white'
+              e.currentTarget.style.borderColor = '#f1f5f9'
+            }}
+          >
+            <div
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 10,
+                background: a.bg,
+                color: a.accent,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+              }}
+            >
+              {a.icon}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: '0.88rem', fontWeight: 700, color: '#0f172a', marginBottom: 1 }}>
+                {a.label}
+              </div>
+              <div style={{ fontSize: '0.74rem', color: '#64748b' }}>{a.desc}</div>
+            </div>
+            <ChevronRight size={15} color="#cbd5e1" />
+          </Link>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function MiniCalendar({
+  ahora,
+  reservasCount,
+  bloqueosCount,
+}: {
+  ahora: Date
+  reservasCount: number
+  bloqueosCount: number
+}) {
+  const [offset, setOffset] = useState(0)
+  const monthBase = new Date(ahora.getFullYear(), ahora.getMonth() + offset, 1)
+  const year = monthBase.getFullYear()
+  const month = monthBase.getMonth()
+  const firstDay = new Date(year, month, 1).getDay()
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+  const dayOffset = firstDay === 0 ? 6 : firstDay - 1 // Mon-start
+  const todayD =
+    ahora.getFullYear() === year && ahora.getMonth() === month ? ahora.getDate() : -1
+
+  const cells: (number | null)[] = []
+  for (let i = 0; i < dayOffset; i++) cells.push(null)
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d)
+
+  return (
+    <div
+      style={{
+        background: 'white',
+        borderRadius: 16,
+        padding: 20,
+        border: '1px solid #f1f5f9',
+        boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: 14,
+        }}
+      >
+        <h4
+          style={{
+            fontFamily: "'Space Grotesk', sans-serif",
+            fontSize: '0.95rem',
+            fontWeight: 700,
+            color: '#0f172a',
+            margin: 0,
+            letterSpacing: '-0.01em',
+            textTransform: 'capitalize',
+          }}
+        >
+          {MONTHS_LONG[month]} {year}
+        </h4>
+        <div style={{ display: 'flex', gap: 4 }}>
+          <button onClick={() => setOffset(offset - 1)} style={miniCalBtn}>
+            <ChevronLeft size={14} color="#64748b" />
+          </button>
+          <button onClick={() => setOffset(offset + 1)} style={miniCalBtn}>
+            <ChevronRight size={14} color="#64748b" />
+          </button>
+        </div>
+      </div>
+
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(7, 1fr)',
+          gap: 4,
+          marginBottom: 6,
+        }}
+      >
+        {DAY_INITIALS.map((d, i) => (
+          <div
+            key={i}
+            style={{
+              textAlign: 'center',
+              fontSize: '0.68rem',
+              color: '#94a3b8',
+              fontWeight: 700,
+              textTransform: 'uppercase',
+            }}
+          >
+            {d}
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
+        {cells.map((d, i) => {
+          if (d === null) return <div key={i} />
+          const isToday = d === todayD
+          const hasDot = isToday && reservasCount > 0
+          return (
+            <div
+              key={i}
+              style={{
+                aspectRatio: '1',
+                borderRadius: 6,
+                position: 'relative',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '0.75rem',
+                fontWeight: isToday ? 800 : 500,
+                color: isToday ? 'white' : '#374151',
+                background: isToday ? '#2563eb' : 'transparent',
+                cursor: 'pointer',
+                transition: 'background 0.15s',
+              }}
+              onMouseEnter={(e) => {
+                if (!isToday) e.currentTarget.style.background = '#f1f5f9'
+              }}
+              onMouseLeave={(e) => {
+                if (!isToday) e.currentTarget.style.background = 'transparent'
+              }}
+            >
+              {d}
+              {hasDot && (
+                <span
+                  style={{
+                    position: 'absolute',
+                    bottom: 3,
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    width: 4,
+                    height: 4,
+                    borderRadius: 99,
+                    background: 'white',
+                  }}
+                />
+              )}
+            </div>
+          )
+        })}
+      </div>
+
+      <div
+        style={{
+          marginTop: 14,
+          paddingTop: 12,
+          borderTop: '1px solid #f1f5f9',
+          display: 'flex',
+          gap: 14,
+          fontSize: '0.72rem',
+          color: '#64748b',
+          flexWrap: 'wrap',
+        }}
+      >
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+          <span style={{ width: 5, height: 5, borderRadius: 99, background: '#2563eb' }} />
+          Hoy
+        </div>
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+          <Calendar size={12} color="#64748b" />
+          {reservasCount} reservas
+        </div>
+        {bloqueosCount > 0 && (
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+            <Ban size={12} color="#64748b" />
+            {bloqueosCount} bloqueos
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+const miniCalBtn: React.CSSProperties = {
+  width: 26,
+  height: 26,
+  borderRadius: 6,
+  border: '1px solid #e2e8f0',
+  background: 'white',
+  cursor: 'pointer',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+}
+
