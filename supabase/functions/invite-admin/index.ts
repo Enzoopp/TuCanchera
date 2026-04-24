@@ -68,7 +68,10 @@ Deno.serve(async (req: Request) => {
     const appUrl = Deno.env.get('APP_URL') ?? 'https://tucanchera.vercel.app'
 
     const { data, error } = await adminClient.auth.admin.inviteUserByEmail(email, {
-      data: { nombre, rol: 'admin' },
+      // invited_at también se incluye en metadata como fallback:
+      // el trigger handle_new_user chequea BOTH la columna nativa auth.users.invited_at
+      // Y este campo en metadata, para garantizar rol='admin' sin importar el timing de GoTrue.
+      data: { nombre, rol: 'admin', invited_at: new Date().toISOString() },
       redirectTo: `${appUrl}/auth/callback`,
     })
 

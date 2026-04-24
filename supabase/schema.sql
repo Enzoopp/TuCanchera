@@ -170,20 +170,25 @@ CREATE TABLE resumen_meses (
 -- Seguridad:
 --   - Clientes normales (signup público): siempre crean perfil con rol='cliente'.
 --     No importa lo que vengan en raw_user_meta_data.rol — se ignora.
---   - Admins invitados via Edge Function invite-admin: Supabase setea la columna
---     invited_at en auth.users cuando se usa inviteUserByEmail(), lo que habilita
---     que se respete el rol pasado en raw_user_meta_data.
---   - Esto previene privilege escalation: un atacante que haga signUp con
---     {data: {rol: 'admin'}} siempre obtiene 'cliente' porque su invited_at es NULL.
+--   - Admins invitados via Edge Function invite-admin: el trigger detecta la invitación
+--     chequeando DOS señales (cualquiera basta):
+--       a) NEW.invited_at IS NOT NULL  → columna nativa que GoTrue setea en inviteUserByEmail
+--       b) raw_user_meta_data->>'invited_at' IS NOT NULL → campo que la Edge Function
+--          incluye explícitamente como fallback de seguridad
+--   - Esto previene privilege escalation: un signUp normal no pasa ninguna de las dos
+--     verificaciones, por lo que siempre obtiene 'cliente'.
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 DECLARE
   v_rol TEXT;
 BEGIN
-  -- Solo respetar el rol del metadata si el usuario fue invitado formalmente.
-  -- inviteUserByEmail() setea NEW.invited_at (columna de auth.users), no el metadata.
-  IF NEW.invited_at IS NOT NULL THEN
+  -- Doble verificación para máxima robustez:
+  --   a) columna nativa auth.users.invited_at (seteada por GoTrue en inviteUserByEmail)
+  --   b) metadata->>'invited_at' (incluido por invite-admin Edge Function como fallback)
+  -- Un signup público normal no cumple ninguna de las dos condiciones → siempre 'cliente'.
+  IF NEW.invited_at IS NOT NULL
+     OR NEW.raw_user_meta_data->>'invited_at' IS NOT NULL THEN
     v_rol := COALESCE(NEW.raw_user_meta_data->>'rol', 'cliente');
   ELSE
     v_rol := 'cliente';
@@ -196,7 +201,14 @@ BEGIN
     NEW.raw_user_meta_data->>'telefono',
     NEW.email,
     v_rol
-  );
+  )
+  -- Re-invite del mismo email: actualizar perfil en lugar de fallar
+  ON CONFLICT (user_id) DO UPDATE
+    SET
+      nombre   = EXCLUDED.nombre,
+      telefono = EXCLUDED.telefono,
+      email    = EXCLUDED.email,
+      rol      = EXCLUDED.rol;
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;

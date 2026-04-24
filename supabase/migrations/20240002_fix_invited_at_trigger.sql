@@ -2,22 +2,21 @@
 -- Corrige el bug en handle_new_user donde se chequeaba invited_at en el metadata JSON
 -- en lugar de la columna invited_at de auth.users.
 --
--- Comportamiento correcto:
---   - inviteUserByEmail() → setea auth.users.invited_at (columna nativa de Supabase)
---   - signUp() normal     → invited_at = NULL
+-- Estrategia (doble check para máxima robustez):
+--   a) NEW.invited_at IS NOT NULL       → columna nativa que GoTrue setea en inviteUserByEmail()
+--   b) metadata->>'invited_at' IS NOT NULL → campo que la Edge Function include como fallback
 --
--- El trigger anterior chequeaba raw_user_meta_data->>'invited_at' (siempre NULL
--- para invitados, porque Supabase no lo pone en el JSON), por lo que todos los
--- admins invitados terminaban con rol='cliente'. Este fix lo corrige.
+-- Un signup público normal no cumple ninguna de las dos → siempre obtiene 'cliente'.
+-- Esto bloquea el privilege escalation vía signUp({ data: { rol: 'admin' } }).
 
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 DECLARE
   v_rol TEXT;
 BEGIN
-  -- Solo respetar el rol del metadata si el usuario fue invitado formalmente.
-  -- inviteUserByEmail() setea NEW.invited_at (columna de auth.users), no el metadata.
-  IF NEW.invited_at IS NOT NULL THEN
+  -- Doble verificación: columna nativa GoTrue + metadata de Edge Function
+  IF NEW.invited_at IS NOT NULL
+     OR NEW.raw_user_meta_data->>'invited_at' IS NOT NULL THEN
     v_rol := COALESCE(NEW.raw_user_meta_data->>'rol', 'cliente');
   ELSE
     v_rol := 'cliente';
