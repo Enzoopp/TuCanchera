@@ -20,6 +20,7 @@ export default function Login() {
   const [password, setPassword] = useState('')
   const [showPass, setShowPass] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [googleHint, setGoogleHint] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [googleLoading, setGoogleLoading] = useState(false)
 
@@ -42,11 +43,14 @@ export default function Login() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError(null)
+    setGoogleHint(false)
     setSubmitted(false)
 
     try {
       const { error: signInError } = await signIn(email, password)
       if (signInError) {
+        const isInvalidCreds = signInError.message.includes('Invalid login credentials')
+        setGoogleHint(isInvalidCreds)
         setError(translateAuthError(signInError.message))
       } else {
         setSubmitted(true)
@@ -233,15 +237,38 @@ export default function Login() {
         {error && (
           <div
             style={{
-              background: '#fef2f2',
-              border: '1px solid #fecaca',
-              color: '#b91c1c',
+              background: googleHint ? '#fffbeb' : '#fef2f2',
+              border: `1px solid ${googleHint ? '#fde68a' : '#fecaca'}`,
               borderRadius: 10,
-              padding: '10px 14px',
+              padding: '12px 14px',
               fontSize: '0.85rem',
             }}
           >
-            {error}
+            <p style={{ color: googleHint ? '#92400e' : '#b91c1c', margin: 0 }}>
+              {error}
+            </p>
+            {googleHint && (
+              <p style={{ color: '#78350f', margin: '8px 0 0', fontSize: '0.82rem' }}>
+                ¿Te registraste con Google?{' '}
+                <button
+                  type="button"
+                  onClick={handleGoogle}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: '#d97706',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    padding: 0,
+                    fontSize: '0.82rem',
+                    textDecoration: 'underline',
+                  }}
+                >
+                  Ingresá con Google
+                </button>
+                {' '}— las cuentas de Google no tienen contraseña en la app.
+              </p>
+            )}
           </div>
         )}
 
