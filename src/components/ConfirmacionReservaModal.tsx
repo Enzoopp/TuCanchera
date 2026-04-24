@@ -1,8 +1,7 @@
-// SRP: Modal de confirmación de reserva con dos opciones de pago.
-// - "Pagar con MercadoPago": invoca Edge Function → redirige a Checkout Pro (requiere VITE_MP_ENABLED=true)
-// - "Pagar en el lugar": inserta reserva directamente (siempre disponible)
+// SRP: Modal de confirmación de reserva.
+// - "Pagar en el lugar": inserta reserva directamente (único método activo).
+// - "Pagar con MercadoPago": pendiente de implementación (gateado por VITE_MP_ENABLED=true).
 // La lógica de persistencia se delega a reservaService.
-// Diseño replicado de ReservarPage.jsx (modal inline) + BookingConfirmation.jsx.
 
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -11,10 +10,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { useAuth } from '@/context/AuthContext'
 import { useTenant } from '@/context/TenantContext'
-import {
-  crearReservaEnLugar,
-  crearPreferenciaMercadoPago,
-} from '@/services/reservaService'
+import { crearReservaEnLugar } from '@/services/reservaService'
 import SportIcon, { sportPalette, sportLabel } from '@/components/brand/SportIcon'
 import { X, MapPin, Calendar, Clock, CreditCard, Building2, Check } from 'lucide-react'
 import type { Cancha, Slot } from '@/types'
@@ -121,27 +117,9 @@ export default function ConfirmacionReservaModal({
     }
   }
 
-  async function handlePagarMP() {
-    if (!user || !profile) {
-      toast.error('Debes iniciar sesión')
-      return
-    }
-    setProcesando('mp')
-    try {
-      const { url } = await crearPreferenciaMercadoPago({
-        canchaId: cancha.id,
-        clienteId: profile.id,
-        fecha,
-        horaInicio: slot.horaInicio,
-        horaFin: slot.horaFin,
-        metodoPago: 'mercadopago',
-      })
-      window.location.href = url
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Error al iniciar pago'
-      toast.error(msg)
-      setProcesando(null)
-    }
+  // TODO: implementar cuando se integre MercadoPago
+  function handlePagarMP() {
+    toast.info('El pago con MercadoPago estará disponible próximamente.')
   }
 
   function handleClose() {

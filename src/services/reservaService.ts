@@ -78,24 +78,3 @@ export async function fetchMisReservas(clienteId: string): Promise<
   if (error) throw error
   return data as never
 }
-
-/**
- * Invoca la Edge Function de Supabase que crea una preferencia de MercadoPago.
- * Retorna la URL del Checkout Pro para redirigir al usuario.
- */
-export async function crearPreferenciaMercadoPago(
-  params: CrearReservaParams
-): Promise<{ url: string }> {
-  const { data, error } = await supabase.functions.invoke('crear-preferencia-mp', {
-    body: {
-      canchaId: params.canchaId,
-      clienteId: params.clienteId,
-      fecha: params.fecha,
-      horaInicio: params.horaInicio,
-      horaFin: params.horaFin,
-    },
-  })
-
-  if (error) throw error
-  return data as { url: string }
-}

@@ -267,54 +267,11 @@ export async function registrarAsistencia(id: string, asistio: boolean) {
 }
 
 export async function cancelarReservaAdmin(id: string) {
-  // 1. Obtener datos de la reserva antes de cancelar (para notificación)
-  const { data: reserva, error: fetchError } = await supabase
-    .from('reservas')
-    .select(`
-      *,
-      canchas ( nombre, tipo, complejos ( nombre ) ),
-      profiles ( nombre, telefono, email )
-    `)
-    .eq('id', id)
-    .single()
-  if (fetchError) throw fetchError
-
-  // 2. Cancelar la reserva
   const { error } = await supabase
     .from('reservas')
     .update({ estado: 'cancelada_admin' })
     .eq('id', id)
   if (error) throw error
-
-  // 3. Disparar notificación via n8n (cuando esté configurado)
-  // El webhook URL se configura en .env.local como VITE_N8N_WEBHOOK_BASE_URL
-  const n8nBase = import.meta.env.VITE_N8N_WEBHOOK_BASE_URL
-  type ReservaConJoins = typeof reserva & {
-    profiles?: { nombre?: string; telefono?: string; email?: string }
-    canchas?: { nombre?: string; complejos?: { nombre?: string } }
-  }
-  if (n8nBase && reserva) {
-    const r = reserva as ReservaConJoins
-    try {
-      await fetch(`${n8nBase}/cancelacion-admin`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          cliente_nombre: r.profiles?.nombre,
-          cliente_telefono: r.profiles?.telefono,
-          cliente_email: r.profiles?.email,
-          cancha_nombre: r.canchas?.nombre,
-          complejo_nombre: r.canchas?.complejos?.nombre,
-          fecha: reserva.fecha,
-          hora_inicio: reserva.hora_inicio,
-          hora_fin: reserva.hora_fin,
-        }),
-      })
-    } catch {
-      // Si falla el webhook no interrumpimos la cancelación
-      console.warn('No se pudo enviar notificación de cancelación')
-    }
-  }
 }
 
 // ---------- Cierre mensual ----------
