@@ -76,10 +76,9 @@ export interface Reserva {
   hora_fin: string
   metodo_pago: MetodoPago
   estado: EstadoReserva
-  mp_payment_id: string | null
-  // null = sin confirmar (turno futuro o no aplica), true = vino, false = no se presentó
+  mp_payment_id: string | null  // reservado para futura integración MP
+  // null = sin registrar (turno futuro o no aplica), true = asistió, false = no se presentó
   asistio: boolean | null
-  archivada: boolean
   creado_en: string
 }
 
@@ -89,9 +88,3 @@ export interface Slot {
   estado: EstadoSlot
 }
 
-export interface CodigoInvitacion {
-  id: string
-  codigo: string
-  usado: boolean
-  creado_en: string
-}

@@ -170,19 +170,20 @@ CREATE TABLE resumen_meses (
 -- Seguridad:
 --   - Clientes normales (signup público): siempre crean perfil con rol='cliente'.
 --     No importa lo que vengan en raw_user_meta_data.rol — se ignora.
---   - Admins invitados via Edge Function invite-admin: la función pone
---     invited_at en raw_user_meta_data, lo que habilita el rol recibido.
+--   - Admins invitados via Edge Function invite-admin: Supabase setea la columna
+--     invited_at en auth.users cuando se usa inviteUserByEmail(), lo que habilita
+--     que se respete el rol pasado en raw_user_meta_data.
 --   - Esto previene privilege escalation: un atacante que haga signUp con
---     {data: {rol: 'admin'}} siempre obtiene 'cliente'.
+--     {data: {rol: 'admin'}} siempre obtiene 'cliente' porque su invited_at es NULL.
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 DECLARE
   v_rol TEXT;
 BEGIN
-  -- Solo respetar el rol del metadata si el usuario fue invitado formalmente
-  -- (invite-admin Edge Function pone invited_at en raw_user_meta_data)
-  IF NEW.raw_user_meta_data->>'invited_at' IS NOT NULL THEN
+  -- Solo respetar el rol del metadata si el usuario fue invitado formalmente.
+  -- inviteUserByEmail() setea NEW.invited_at (columna de auth.users), no el metadata.
+  IF NEW.invited_at IS NOT NULL THEN
     v_rol := COALESCE(NEW.raw_user_meta_data->>'rol', 'cliente');
   ELSE
     v_rol := 'cliente';
