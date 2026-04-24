@@ -54,6 +54,7 @@ export default function Bloqueos() {
   // Seleccionar primera cancha por defecto
   useEffect(() => {
     if (!canchaId && canchas && canchas.length > 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setCanchaId(canchas[0].id)
     }
   }, [canchas, canchaId])

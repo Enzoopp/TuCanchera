@@ -115,6 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     })
     return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id])
 
   async function signIn(email: string, password: string) {
@@ -187,6 +188,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 }
 
 // Hook para consumir el contexto de auth de forma segura
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAuth() {
   const context = useContext(AuthContext)
   if (context === undefined) {

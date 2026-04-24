@@ -10,6 +10,7 @@ import { Phone, X } from 'lucide-react'
 
 const STORAGE_KEY = 'tc_perfil_modal_descartado'
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useDeberiaCompletarPerfil(): boolean {
   const { user, profile, loading } = useAuth()
   if (loading || !user || !profile) return false

@@ -86,24 +86,26 @@ export default function Navbar({ transparent = false }: NavbarProps) {
                   Panel admin
                 </Link>
               )}
-              <Link
-                to="/mis-reservas"
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  padding: '8px 14px',
-                  borderRadius: 10,
-                  fontFamily: "'DM Sans', sans-serif",
-                  fontSize: '0.85rem',
-                  fontWeight: 600,
-                  color: textColor,
-                  textDecoration: 'none',
-                  transition: 'background 0.15s',
-                }}
-              >
-                <UserIcon size={15} /> Mis reservas
-              </Link>
+              {rol === 'cliente' && (
+                <Link
+                  to="/mis-reservas"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '8px 14px',
+                    borderRadius: 10,
+                    fontFamily: "'DM Sans', sans-serif",
+                    fontSize: '0.85rem',
+                    fontWeight: 600,
+                    color: textColor,
+                    textDecoration: 'none',
+                    transition: 'background 0.15s',
+                  }}
+                >
+                  <UserIcon size={15} /> Mis reservas
+                </Link>
+              )}
               <button
                 onClick={async () => {
                   await signOut()

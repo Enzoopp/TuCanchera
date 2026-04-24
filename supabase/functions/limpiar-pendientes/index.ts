@@ -15,7 +15,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const MINUTOS_EXPIRACION = 15
 
-serve(async (_req) => {
+serve(async (_req: Request) => { // eslint-disable-line @typescript-eslint/no-unused-vars
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!

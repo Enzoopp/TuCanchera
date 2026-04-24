@@ -52,12 +52,14 @@ export default function SportIcon({ sport, size = 20, color = 'currentColor' }: 
 }
 
 // Paleta por deporte (del diseño, SPORT_TYPES en AdminCourts.jsx)
+// eslint-disable-next-line react-refresh/only-export-components
 export const SPORT_PALETTE = {
   'Fútbol 5':  { bg: '#f0fdf4', text: '#16a34a', color: 'green'  as const },
   'Fútbol 7':  { bg: '#eff6ff', text: '#2563eb', color: 'blue'   as const },
   'Pádel':     { bg: '#faf5ff', text: '#7c3aed', color: 'purple' as const },
 } as const
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function sportPalette(sport: string) {
   if (sport === 'Fútbol 5' || sport === 'futbol5') return SPORT_PALETTE['Fútbol 5']
   if (sport === 'Fútbol 7' || sport === 'futbol7') return SPORT_PALETTE['Fútbol 7']
@@ -65,6 +67,7 @@ export function sportPalette(sport: string) {
   return SPORT_PALETTE['Fútbol 5']
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function sportLabel(tipo: TipoCancha): string {
   if (tipo === 'futbol5') return 'Fútbol 5'
   if (tipo === 'futbol7') return 'Fútbol 7'

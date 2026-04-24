@@ -727,6 +727,7 @@ function CourtDrawer({
   // Cuando cargan los horarios del editar, popular el form
   useEffect(() => {
     if (cancha && horariosData) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setForm((f) => ({ ...f, schedule: horariosFromDB(horariosData) }))
     }
   }, [cancha, horariosData])

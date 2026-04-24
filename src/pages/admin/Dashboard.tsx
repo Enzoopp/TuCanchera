@@ -127,7 +127,7 @@ export default function Dashboard() {
   const confirmadas = (reservas ?? []).filter((r) => r.estado === 'confirmada')
   const pendientes = (reservas ?? []).filter((r) => r.estado === 'pendiente_pago')
   const bloqueadasCount = bloqueos?.length ?? 0
-  const ingresosDia = confirmadas.reduce((acc, r) => acc + (((r as any).canchas?.precio ?? 0) as number), 0)
+  const ingresosDia = confirmadas.reduce((acc, r) => acc + (((r as unknown as { canchas?: { precio?: number } }).canchas?.precio ?? 0)), 0)
 
   const fechaDisplay = `${DAYS_LONG[ahora.getDay()]}, ${ahora.getDate()} de ${MONTHS_LONG[ahora.getMonth()]} de ${ahora.getFullYear()}`
 
@@ -466,8 +466,8 @@ function ReservaRow({
   pasado: boolean
   onAsistencia: (id: string, valor: boolean) => void
 }) {
-  const cancha = (r as any).canchas as { nombre?: string; tipo?: TipoCancha } | null
-  const cliente = (r as any).profiles as { nombre?: string; telefono?: string | null } | null
+  const cancha = (r as unknown as { canchas?: { nombre?: string; tipo?: TipoCancha } }).canchas ?? null
+  const cliente = (r as unknown as { profiles?: { nombre?: string; telefono?: string | null } }).profiles ?? null
   const tipoSport = cancha?.tipo ? sportLabel(cancha.tipo as TipoCancha) : 'Fútbol 5'
   const palette = sportPalette(tipoSport)
   const status = STATUS_BADGE[r.estado] ?? STATUS_BADGE.pendiente_pago

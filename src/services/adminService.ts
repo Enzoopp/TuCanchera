@@ -289,17 +289,22 @@ export async function cancelarReservaAdmin(id: string) {
   // 3. Disparar notificación via n8n (cuando esté configurado)
   // El webhook URL se configura en .env.local como VITE_N8N_WEBHOOK_BASE_URL
   const n8nBase = import.meta.env.VITE_N8N_WEBHOOK_BASE_URL
+  type ReservaConJoins = typeof reserva & {
+    profiles?: { nombre?: string; telefono?: string; email?: string }
+    canchas?: { nombre?: string; complejos?: { nombre?: string } }
+  }
   if (n8nBase && reserva) {
+    const r = reserva as ReservaConJoins
     try {
       await fetch(`${n8nBase}/cancelacion-admin`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          cliente_nombre: (reserva as any).profiles?.nombre,
-          cliente_telefono: (reserva as any).profiles?.telefono,
-          cliente_email: (reserva as any).profiles?.email,
-          cancha_nombre: (reserva as any).canchas?.nombre,
-          complejo_nombre: (reserva as any).canchas?.complejos?.nombre,
+          cliente_nombre: r.profiles?.nombre,
+          cliente_telefono: r.profiles?.telefono,
+          cliente_email: r.profiles?.email,
+          cancha_nombre: r.canchas?.nombre,
+          complejo_nombre: r.canchas?.complejos?.nombre,
           fecha: reserva.fecha,
           hora_inicio: reserva.hora_inicio,
           hora_fin: reserva.hora_fin,
@@ -367,7 +372,12 @@ export async function fetchResumenesMeses(complejoId: string): Promise<ResumenMe
 
   if (error) throw error
 
-  return (data ?? []).map((r: any) => ({
+  type RawResumen = {
+    anio: number; mes: number; total_reservas: number
+    confirmadas: number; canceladas: number
+    asistieron: number; no_asistieron: number; ingresos: number
+  }
+  return (data as RawResumen[] ?? []).map((r) => ({
     anio: r.anio,
     mes: r.mes,
     totalReservas: r.total_reservas,
