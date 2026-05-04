@@ -17,6 +17,7 @@ import {
 import { MailCheck } from 'lucide-react'
 
 export default function ForgotPassword() {
+  // Estado local del formulario de recuperación
   const [email, setEmail] = useState('')
   const [loading, setLoading] = useState(false)
   const [sent, setSent] = useState(false)
@@ -27,6 +28,7 @@ export default function ForgotPassword() {
     setError(null)
     setLoading(true)
 
+    // Supabase envía el email con el link de recuperación
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: `${window.location.origin}/reset-password`,
     })
@@ -40,6 +42,7 @@ export default function ForgotPassword() {
     }
   }
 
+  // Vista de confirmación cuando el email fue enviado
   if (sent) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-neutral-50 px-4">

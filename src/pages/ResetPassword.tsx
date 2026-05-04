@@ -22,6 +22,7 @@ export default function ResetPassword() {
   const [confirm, setConfirm] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Habilita el form cuando Supabase valida el token del link
   const [ready, setReady] = useState(false)
 
   useEffect(() => {

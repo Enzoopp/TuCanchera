@@ -19,6 +19,7 @@ type Estado = 'cargando' | 'confirmado' | 'error'
 
 export default function AuthCallback() {
   const navigate = useNavigate()
+  // Estado de UI: esperando confirmación, éxito o error
   const [estado, setEstado] = useState<Estado>('cargando')
 
   useEffect(() => {
@@ -29,7 +30,7 @@ export default function AuthCallback() {
       }
     })
 
-    // Timeout: si en 5 segundos no hubo evento, mostrar error
+    // Timeout defensivo: si en 5 segundos no hubo evento, mostrar error
     const timeout = setTimeout(() => {
       setEstado((prev) => prev === 'cargando' ? 'error' : prev)
     }, 5000)
