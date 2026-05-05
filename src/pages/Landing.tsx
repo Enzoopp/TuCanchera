@@ -1,5 +1,9 @@
-// SRP: Página pública de inicio. Lista todos los complejos activos
-// para que los clientes puedan descubrirlos, y ofrece accesos a login/registro.
+// ============================================================
+// LANDING.TSX  (ruta: /explorar)
+// Página pública de inicio — la primera que ve cualquier visitante.
+// Muestra todos los complejos activos en cards para que los clientes
+// puedan descubrirlos, y ofrece accesos a login y registro.
+// ============================================================
 
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
@@ -7,10 +11,16 @@ import { useAuth } from '@/context/AuthContext'
 import { fetchComplejosActivos } from '@/services/complejoService'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+
+// Íconos de lucide-react
 import { MapPin, ArrowRight, LogIn, User, LandPlot, LogOut } from 'lucide-react'
 
 export default function Landing() {
+  // Traemos el usuario logueado, su rol y la función de cerrar sesión del AuthContext
   const { user, rol, signOut } = useAuth()
+
+  // useQuery: busca todos los complejos activos desde Supabase
+  // 'complejos-activos' es la clave de caché — React Query no vuelve a pedir si ya lo tiene
   const { data: complejos, isLoading } = useQuery({
     queryKey: ['complejos-activos'],
     queryFn: fetchComplejosActivos,
@@ -18,9 +28,12 @@ export default function Landing() {
 
   return (
     <div className="min-h-screen bg-neutral-50">
-      {/* Top bar */}
+
+      {/* ── Barra de navegación superior ── */}
       <header className="border-b border-neutral-200 bg-white">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
+
+          {/* Logo + nombre de la app */}
           <Link to="/explorar" className="flex items-center gap-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-600 text-white">
               <LandPlot className="h-5 w-5" />
@@ -30,16 +43,18 @@ export default function Landing() {
             </span>
           </Link>
 
+          {/* Botones del header — cambian según si hay sesión o no */}
           <div className="flex items-center gap-2">
             {user ? (
+              // SI hay usuario logueado: mostrar panel o mis reservas + botón salir
               <>
                 {rol === 'admin' ? (
+                  // Admin → link al panel de administración
                   <Link to="/admin/dashboard">
-                    <Button variant="outline" size="sm">
-                      Panel admin
-                    </Button>
+                    <Button variant="outline" size="sm">Panel admin</Button>
                   </Link>
                 ) : (
+                  // Cliente → link a sus reservas
                   <Link to="/mis-reservas">
                     <Button variant="outline" size="sm">
                       <User className="mr-1.5 h-4 w-4" />
@@ -47,16 +62,13 @@ export default function Landing() {
                     </Button>
                   </Link>
                 )}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={signOut}
-                  title="Cerrar sesión"
-                >
+                {/* Botón de cerrar sesión — llama a signOut del AuthContext */}
+                <Button variant="ghost" size="sm" onClick={signOut} title="Cerrar sesión">
                   <LogOut className="h-4 w-4" />
                 </Button>
               </>
             ) : (
+              // SI no hay usuario: mostrar login y registro
               <>
                 <Link to="/login">
                   <Button variant="ghost" size="sm">
@@ -73,7 +85,7 @@ export default function Landing() {
         </div>
       </header>
 
-      {/* Hero */}
+      {/* ── Sección hero (título + descripción) ── */}
       <section className="border-b border-neutral-200 bg-gradient-to-b from-primary-50 to-white">
         <div className="mx-auto max-w-4xl px-4 py-16 text-center sm:py-20">
           <h1 className="text-4xl font-bold tracking-tight text-neutral-900 sm:text-5xl">
@@ -86,12 +98,13 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* Listado de complejos */}
+      {/* ── Listado de complejos ── */}
       <main className="mx-auto max-w-6xl px-4 py-10">
         <div className="mb-6 flex items-center justify-between">
           <h2 className="text-xl font-semibold text-neutral-900">
             Complejos disponibles
           </h2>
+          {/* Muestra cuántos complejos hay solo si ya cargaron */}
           {complejos && complejos.length > 0 && (
             <p className="text-sm text-neutral-500">
               {complejos.length}{' '}
@@ -100,6 +113,7 @@ export default function Landing() {
           )}
         </div>
 
+        {/* Estado de carga: muestra Skeletons mientras React Query busca los datos */}
         {isLoading ? (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {[1, 2, 3, 4, 5, 6].map((i) => (
@@ -107,15 +121,19 @@ export default function Landing() {
             ))}
           </div>
         ) : !complejos || complejos.length === 0 ? (
+          // Estado vacío: no hay complejos cargados aún
           <EmptyState />
         ) : (
+          // Grid de cards — una por complejo
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {complejos.map((c) => (
+              // Cada card es un Link que lleva a la página del complejo (por slug)
               <Link
                 key={c.id}
                 to={`/${c.slug}`}
                 className="group block overflow-hidden rounded-xl border border-neutral-200 bg-white transition-shadow hover:shadow-md"
               >
+                {/* Imagen o inicial del nombre como fallback */}
                 <div className="flex h-32 items-center justify-center bg-gradient-to-br from-primary-100 to-primary-50">
                   {c.logo_url ? (
                     <img
@@ -124,26 +142,32 @@ export default function Landing() {
                       className="h-20 w-20 rounded-lg object-cover shadow-sm"
                     />
                   ) : (
+                    // Si no hay logo, muestra la primera letra del nombre
                     <div className="flex h-20 w-20 items-center justify-center rounded-lg bg-white text-3xl font-bold text-primary-600 shadow-sm">
                       {c.nombre.charAt(0).toUpperCase()}
                     </div>
                   )}
                 </div>
+
+                {/* Información del complejo */}
                 <div className="p-4">
                   <h3 className="font-semibold text-neutral-900 group-hover:text-primary-600">
                     {c.nombre}
                   </h3>
+                  {/* Dirección — solo se muestra si existe */}
                   {c.direccion && (
                     <p className="mt-1 flex items-center gap-1 text-xs text-neutral-500">
                       <MapPin className="h-3 w-3 shrink-0" />
                       <span className="truncate">{c.direccion}</span>
                     </p>
                   )}
+                  {/* Descripción — truncada a 2 líneas */}
                   {c.descripcion && (
                     <p className="mt-2 line-clamp-2 text-sm text-neutral-600">
                       {c.descripcion}
                     </p>
                   )}
+                  {/* CTA "Ver canchas" con flecha animada al hover */}
                   <div className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-primary-600">
                     Ver canchas
                     <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
@@ -155,12 +179,13 @@ export default function Landing() {
         )}
       </main>
 
-      {/* Footer con CTA admin */}
+      {/* ── Footer con CTA para administradores ── */}
       <footer className="mt-10 border-t border-neutral-200 bg-white">
         <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-4 py-8 sm:flex-row">
           <p className="text-sm text-neutral-500">
             © {new Date().getFullYear()} TuCanchera
           </p>
+          {/* Link para que admins de complejos se registren */}
           <Link
             to="/register-admin"
             className="text-sm font-medium text-primary-600 hover:underline"
@@ -173,6 +198,8 @@ export default function Landing() {
   )
 }
 
+// ── Componente de estado vacío ───────────────────────────────
+// Se muestra cuando no hay ningún complejo cargado en la BD todavía
 function EmptyState() {
   return (
     <div className="rounded-xl border border-dashed border-neutral-300 bg-white p-12 text-center">
