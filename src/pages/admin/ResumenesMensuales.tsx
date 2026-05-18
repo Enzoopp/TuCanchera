@@ -25,7 +25,6 @@ import {
   CheckCircle2,
   XCircle,
   AlertTriangle,
-  Trash2,
 } from 'lucide-react'
 
 const MESES = [
@@ -186,36 +185,20 @@ export default function ResumenesMensuales() {
     if (!complejo) return
     setCerrando(true)
     try {
+      // 1. Obtener el detalle ANTES de cerrar (la función DB lo archiva y borra)
       const reservas = await fetchReservasMes(complejo.id, mesPasado.anio, mesPasado.mes)
 
-      const totalReservas = reservas.length
-      const confirmadas = reservas.filter((r) => r.estado === 'confirmada').length
-      const canceladas = reservas.filter((r) => r.estado === 'cancelada_admin').length
-      const asistieron = reservas.filter((r) => r.asistio === true).length
-      const noAsistieron = reservas.filter((r) => r.asistio === false).length
-      const ingresos = reservas
-        .filter((r) => r.estado === 'confirmada')
-        .reduce((acc, r) => acc + ((r.canchas as unknown as { precio?: number } | null)?.precio ?? 0), 0)
+      // 2. Cerrar el mes via función DB (archiva + borra + guarda KPIs atómicamente)
+      const kpis = await cerrarMes(complejo.id, mesPasado.anio, mesPasado.mes)
 
-      const kpis: ResumenMes = {
-        anio: mesPasado.anio,
-        mes: mesPasado.mes,
-        totalReservas,
-        confirmadas,
-        canceladas,
-        asistieron,
-        noAsistieron,
-        ingresos,
-      }
-
+      // 3. Generar y descargar PDF con el detalle completo que ya obtuvimos
       await generarPDF(complejo.nombre, mesPasado.anio, mesPasado.mes, kpis, reservas)
-      await cerrarMes(complejo.id, mesPasado.anio, mesPasado.mes, kpis)
 
       await queryClient.invalidateQueries({ queryKey: ['admin-resumenes-meses'] })
       await queryClient.invalidateQueries({ queryKey: ['admin-reservas'] })
       await queryClient.invalidateQueries({ queryKey: ['admin-dashboard-reservas'] })
 
-      toast.success(`${MESES[mesPasado.mes]} cerrado — PDF descargado y reservas eliminadas`)
+      toast.success(`${MESES[mesPasado.mes]} cerrado — PDF descargado y reservas archivadas`)
       setModalCerrar(false)
     } catch (err) {
       toast.error('Error al cerrar el mes')
@@ -315,8 +298,8 @@ export default function ResumenesMensuales() {
         <AlertTriangle size={18} color="#d97706" style={{ marginTop: 2, flexShrink: 0 }} />
         <div style={{ fontSize: '0.86rem', color: '#78350f', lineHeight: 1.5 }}>
           Al cerrar un mes se descarga el PDF automáticamente y las reservas de ese período se{' '}
-          <strong style={{ color: '#78350f' }}>eliminan permanentemente</strong> para liberar espacio.
-          Guardá bien el PDF — es el único registro que queda.
+          <strong style={{ color: '#78350f' }}>archivan</strong> para liberar espacio en la tabla operativa.
+          El detalle queda guardado en el historial por si necesitás consultarlo.
         </div>
       </div>
 
@@ -613,14 +596,14 @@ function ConfirmCloseModal({
             width: 56,
             height: 56,
             borderRadius: '50%',
-            background: '#fee2e2',
+            background: '#dbeafe',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             margin: '0 auto 16px',
           }}
         >
-          <Trash2 size={26} color="#dc2626" />
+          <Archive size={26} color="#2563eb" />
         </div>
         <h3
           style={{
@@ -644,11 +627,11 @@ function ConfirmCloseModal({
             textAlign: 'center',
           }}
         >
-          Se va a descargar el PDF con el detalle completo y luego{' '}
+          Se va a descargar el PDF con el detalle completo y las reservas de {mesLabel} se{' '}
           <strong style={{ color: '#0f172a' }}>
-            todas las reservas de {mesLabel} se eliminarán para siempre
+            archivarán
           </strong>
-          . Esta acción no se puede deshacer.
+          {' '}para mantener la tabla operativa liviana. El historial queda guardado.
         </p>
 
         <div style={{ display: 'flex', gap: 10 }}>
@@ -682,7 +665,7 @@ function ConfirmCloseModal({
               padding: '11px 14px',
               borderRadius: 10,
               border: 'none',
-              background: loading ? '#ef4444' : 'linear-gradient(135deg, #dc2626, #b91c1c)',
+              background: loading ? '#2563eb' : 'linear-gradient(135deg, #2563eb, #1d4ed8)',
               color: 'white',
               fontFamily: "'DM Sans', sans-serif",
               fontSize: '0.88rem',
@@ -692,11 +675,11 @@ function ConfirmCloseModal({
               alignItems: 'center',
               justifyContent: 'center',
               gap: 6,
-              boxShadow: loading ? 'none' : '0 2px 8px rgba(220,38,38,0.3)',
+              boxShadow: loading ? 'none' : '0 2px 8px rgba(37,99,235,0.3)',
             }}
           >
-            <Trash2 size={14} />
-            {loading ? 'Procesando…' : 'Cerrar y eliminar'}
+            <Archive size={14} />
+            {loading ? 'Procesando…' : 'Cerrar y archivar'}
           </button>
         </div>
       </div>

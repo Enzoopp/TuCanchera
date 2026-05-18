@@ -258,12 +258,48 @@ export async function fetchReservasDelComplejo(
   return data as never
 }
 
+/**
+ * Marca la asistencia de una reserva de forma segura y concurrente.
+ *
+ * Llama a la función PG marcar_asistencia() que usa SELECT FOR UPDATE
+ * para evitar overwrites silenciosos entre dos tabs del admin.
+ *
+ * Códigos de retorno:
+ *   UPDATED        → asistencia registrada
+ *   ALREADY_MARKED → ya tenía ese valor (idempotente, ok=true)
+ *   CONFLICT       → ya marcado con valor distinto → lanza error con el valor actual
+ *   NOT_FOUND      → reserva no existe o no pertenece al complejo
+ *   UNAUTHORIZED   → sin sesión válida
+ */
 export async function registrarAsistencia(id: string, asistio: boolean) {
-  const { error } = await supabase
-    .from('reservas')
-    .update({ asistio })
-    .eq('id', id)
+  const { data, error } = await supabase
+    .rpc('marcar_asistencia', { p_reserva_id: id, p_asistio: asistio })
+
   if (error) throw error
+
+  type AsistenciaResult = {
+    ok: boolean
+    code: 'UPDATED' | 'ALREADY_MARKED' | 'CONFLICT' | 'NOT_FOUND' | 'UNAUTHORIZED'
+    asistio?: boolean | null
+    actual?: boolean | null
+    msg?: string
+  }
+
+  const result = data as AsistenciaResult
+
+  if (!result.ok) {
+    if (result.code === 'CONFLICT') {
+      const valorActual = result.actual ? 'presente' : 'ausente'
+      throw new Error(
+        `Ya fue marcado como ${valorActual} por otra sesión. Recargá la página para ver el estado actual.`
+      )
+    }
+    if (result.code === 'NOT_FOUND') {
+      throw new Error('Reserva no encontrada o sin permiso para modificarla.')
+    }
+    throw new Error(result.msg ?? `Error al registrar asistencia (${result.code})`)
+  }
+  // UPDATED o ALREADY_MARKED → éxito
 }
 
 export async function cancelarReservaAdmin(id: string) {
@@ -347,58 +383,92 @@ export async function fetchResumenesMeses(complejoId: string): Promise<ResumenMe
 }
 
 /**
- * Cierra un mes:
- *   1. Guarda los KPIs en resumen_meses
- *   2. Borra PERMANENTEMENTE todas las reservas de ese período
+ * Cierra un mes de forma atómica vía la función PG cerrar_mes_complejo():
+ *   1. Calcula y guarda los KPIs en resumen_meses (upsert).
+ *   2. Copia las reservas del mes a reservas_archivadas (soft delete).
+ *   3. Borra las reservas de la tabla operativa (la tabla queda liviana).
  *
- * Llamar DESPUÉS de generar y descargar el PDF.
+ * Devuelve los KPIs calculados para que el frontend pueda generar el PDF.
+ * El detalle completo (fetchReservasMes) se debe obtener ANTES de llamar cerrarMes.
+ *
+ * La función DB es idempotente: si el mes ya fue cerrado devuelve
+ * ya_cerrado=true con los KPIs ya guardados, sin modificar nada.
  */
 export async function cerrarMes(
   complejoId: string,
   anio: number,
   mes: number,
-  kpis: Omit<ResumenMes, 'anio' | 'mes'>
-): Promise<void> {
-  const desde = `${anio}-${String(mes).padStart(2, '0')}-01`
-  const hasta = new Date(anio, mes, 0).toISOString().slice(0, 10)
+  // kpis ya no se pasan desde afuera — la función DB los calcula internamente
+  // Se mantiene el parámetro por compatibilidad pero se ignora
+  _kpis?: Omit<ResumenMes, 'anio' | 'mes'>
+): Promise<ResumenMes> {
+  const { data, error } = await supabase.rpc('cerrar_mes_complejo', {
+    p_complejo_id: complejoId,
+    p_anio: anio,
+    p_mes: mes,
+  })
 
-  // 1. Guardar KPIs (upsert por si se reintenta)
-  const { error: kpiError } = await supabase
-    .from('resumen_meses')
-    .upsert({
-      complejo_id: complejoId,
-      anio,
-      mes,
-      total_reservas: kpis.totalReservas,
-      confirmadas: kpis.confirmadas,
-      canceladas: kpis.canceladas,
-      asistieron: kpis.asistieron,
-      no_asistieron: kpis.noAsistieron,
-      ingresos: kpis.ingresos,
-      cerrado_en: new Date().toISOString(),
-    }, { onConflict: 'complejo_id,anio,mes' })
+  if (error) throw error
 
-  if (kpiError) throw kpiError
+  type CerrarMesResult = {
+    ok: boolean
+    ya_cerrado: boolean
+    totalReservas: number
+    confirmadas: number
+    canceladas: number
+    asistieron: number
+    noAsistieron: number
+    ingresos: number
+  }
 
-  // 2. Obtener canchas del complejo
-  const { data: canchas, error: cErr } = await supabase
-    .from('canchas')
-    .select('id')
+  const result = data as CerrarMesResult
+
+  if (!result.ok) {
+    throw new Error('Error al cerrar el mes en la base de datos.')
+  }
+
+  return {
+    anio,
+    mes,
+    totalReservas: result.totalReservas,
+    confirmadas:   result.confirmadas,
+    canceladas:    result.canceladas,
+    asistieron:    result.asistieron,
+    noAsistieron:  result.noAsistieron,
+    ingresos:      result.ingresos,
+  }
+}
+
+/**
+ * Trae el detalle de reservas archivadas de un mes ya cerrado.
+ * Útil para regenerar el PDF o auditar el historial.
+ */
+export async function fetchReservasArchivadas(
+  complejoId: string,
+  anio: number,
+  mes: number
+): Promise<ReservaAdmin[]> {
+  const { data, error } = await supabase
+    .from('reservas_archivadas')
+    .select(`
+      id, cancha_id, cliente_id, fecha, hora_inicio, hora_fin,
+      metodo_pago, estado, asistio, creado_en
+    `)
     .eq('complejo_id', complejoId)
-  if (cErr) throw cErr
+    .eq('archivado_por_anio', anio)
+    .eq('archivado_por_mes', mes)
+    .order('fecha',       { ascending: true })
+    .order('hora_inicio', { ascending: true })
 
-  const canchaIds = (canchas ?? []).map((c: { id: string }) => c.id)
-  if (canchaIds.length === 0) return
+  if (error) throw error
 
-  // 3. Borrar permanentemente las reservas del mes
-  const { error: delError } = await supabase
-    .from('reservas')
-    .delete()
-    .in('cancha_id', canchaIds)
-    .gte('fecha', desde)
-    .lte('fecha', hasta)
-
-  if (delError) throw delError
+  // Las reservas archivadas no tienen join a canchas/profiles (sin FK).
+  // Se devuelven con canchas y profiles como null para compatibilidad de tipos.
+  return (data ?? []).map((r) => ({
+    ...r,
+    canchas:  null,
+    profiles: null,
+  })) as ReservaAdmin[]
 }
 
 // ---------- Estadísticas ----------

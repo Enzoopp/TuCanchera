@@ -1,108 +1,184 @@
-# Security Fixes — tucanchera-dev
+# Security & Architecture Fixes — tucanchera-dev
 
-Auditoría de seguridad y acciones necesarias para el proyecto `ztwtxrsanjehzpdbitxg`.
+Auditoría completa del proyecto `ztwtxrsanjehzpdbitxg`.
 
 ---
 
 ## Migraciones SQL (aplicar en orden)
 
-| Archivo | Problema | Método de aplicación |
+| Archivo | Problema | Estado |
 |---|---|---|
-| `20250513000001_fix_functions_security.sql` | Funciones SECURITY DEFINER expuestas a `anon` | `supabase db push` o Dashboard SQL Editor |
-| `20250513000002_fix_storage_listing.sql` | Bucket listing abierto | `supabase db push` o Dashboard SQL Editor |
+| `20250513000001_fix_functions_security.sql` | Funciones SECURITY DEFINER expuestas a `anon` | ⏳ Pendiente |
+| `20250513000002_fix_storage_listing.sql` | Bucket listing abierto a anon | ⏳ Pendiente |
+| `20260518000001_cierre_mensual_archivado.sql` | Cierre mensual borraba reservas permanentemente | ⏳ Pendiente |
+| `20260518000002_marcar_asistencia_safe.sql` | Race condition al registrar asistencia | ⏳ Pendiente |
+
+**Cómo aplicarlas:** Dashboard → SQL Editor → pegar el contenido → Run.
+O bien: `supabase db push` si tenés el CLI configurado.
+
+---
+
+## PROBLEMA 1 — Funciones SECURITY DEFINER accesibles por `anon`
+
+### Qué hace la migración `20250513000001`
+- `handle_new_user()`: trigger interno → `REVOKE EXECUTE FROM PUBLIC/anon/authenticated`
+- `notificar_cambio_reserva()`: ídem (puede no existir)
+- `get_my_rol()`: solo authenticated → `REVOKE FROM PUBLIC`, `GRANT TO authenticated`
+
+### Verificación
+```sql
+SELECT grantee, routine_name, privilege_type
+FROM information_schema.routine_privileges
+WHERE routine_schema = 'public'
+  AND routine_name IN ('get_my_rol', 'handle_new_user', 'cerrar_mes_complejo', 'marcar_asistencia')
+ORDER BY routine_name, grantee;
+-- handle_new_user → sin filas
+-- get_my_rol, cerrar_mes_complejo, marcar_asistencia → solo grantee='authenticated'
+```
+
+---
+
+## PROBLEMA 2 — Storage listing abierto
+
+### Qué hace la migración `20250513000002`
+- Elimina políticas SELECT amplias (anon/public) sobre `logos` y `fotos-complejos`.
+- Crea políticas SELECT para el admin dueño del complejo y para superadmin.
+- **Las URLs públicas directas siguen funcionando** (los buckets son `public=true`,
+  Supabase sirve archivos vía `/storage/v1/object/public/` sin pasar por RLS).
+
+### Verificación
+```bash
+# Debe devolver 403 / array vacío:
+curl -s "https://ztwtxrsanjehzpdbitxg.supabase.co/storage/v1/object/list/logos" \
+  -H "apikey: <ANON_KEY>" -H "Authorization: Bearer <ANON_KEY>" \
+  -d '{}' -X POST
+
+# Las URLs directas deben seguir funcionando:
+curl -I "https://ztwtxrsanjehzpdbitxg.supabase.co/storage/v1/object/public/logos/<complejo_id>/logo.jpg"
+# Esperado: HTTP 200
+```
 
 ---
 
 ## PROBLEMA 3 — `pg_net` instalada en schema `public`
 
-### Por qué importa
+**Solo ejecutable desde el Dashboard — no se puede con SQL puro en Supabase Cloud.**
 
-`pg_net` permite a cualquier función SQL hacer peticiones HTTP salientes.
-Si está en `public` y una función SECURITY DEFINER mal protegida la llama,
-un atacante podría exfiltrar datos a un servidor externo.
-La convención de Supabase es instalar extensiones de infraestructura en el
-schema `extensions`, separadas del código de la aplicación.
+### Pasos
 
-### Cómo moverla (solo vía Dashboard, no se puede con SQL puro en Supabase Cloud)
-
-**Paso 1 — Crear el schema `extensions` si no existe**
-
-En el Dashboard → SQL Editor, ejecutar:
+**1. Crear el schema `extensions` si no existe** (SQL Editor):
 ```sql
 CREATE SCHEMA IF NOT EXISTS extensions;
 ```
 
-**Paso 2 — Desinstalar `pg_net` del schema `public`**
+**2. Desinstalar `pg_net` del schema `public`**
+> La función `notificar_cambio_reserva` fue eliminada en el cleanup de n8n/MP, por lo que no hay dependencias activas.
 
-> ⚠️ Esto requiere que ninguna función activa use `net.*` en ese momento.
-> En `tucanchera-dev` la función `notificar_cambio_reserva` fue eliminada
-> con el cleanup de n8n/MercadoPago, así que no hay dependencias activas.
+Dashboard → **Database** → **Extensions** → buscar `pg_net` → toggle OFF → confirmar.
 
-En Dashboard → **Database** → **Extensions**:
-1. Buscar `pg_net` en la lista.
-2. Click en el toggle para **deshabilitarla**.
-3. Confirmar la desactivación.
+**3. Reinstalar en el schema correcto**
+Dashboard → **Database** → **Extensions** → buscar `pg_net` → toggle ON → **cambiar schema a `extensions`** → confirmar.
 
-**Paso 3 — Reinstalar en el schema correcto**
-
-En Dashboard → **Database** → **Extensions**:
-1. Buscar `pg_net` nuevamente.
-2. Activar el toggle.
-3. En el modal que aparece, **cambiar el schema a `extensions`** antes de confirmar.
-4. Confirmar la instalación.
-
-**Paso 4 — Verificar**
-
+**4. Verificar**:
 ```sql
 SELECT extname, extnamespace::regnamespace AS schema
-FROM pg_extension
-WHERE extname = 'pg_net';
--- Debe mostrar: pg_net | extensions
+FROM pg_extension WHERE extname = 'pg_net';
+-- Esperado: pg_net | extensions
 ```
-
-**Nota:** Si en el futuro se necesita llamar a `net.http_post()` desde una función,
-usar el path completo `extensions.net_http_post(...)` o agregar `extensions` al
-`search_path` de esa función específica.
 
 ---
 
 ## PROBLEMA 4 — Leaked Password Protection deshabilitado
 
-### Por qué importa
+Dashboard → **Authentication** → **Providers** → **Email** → activar **"Leaked password protection"** → Save.
 
-Supabase puede verificar contraseñas nuevas contra la base de datos de
-[HaveIBeenPwned](https://haveibeenpwned.com/Passwords) (k-anonymity, sin exponer
-la contraseña real). Si una contraseña fue filtrada en algún breach conocido,
-Supabase la rechaza durante el registro o cambio de contraseña.
-
-### Cómo activarlo
-
-1. Ir al **Supabase Dashboard** del proyecto `tucanchera-dev`.
-2. Menú lateral izquierdo → **Authentication**.
-3. Pestaña **Providers** → sección **Email**.
-4. Buscar la opción **"Leaked password protection"** (o **"Check for leaked passwords"**).
-5. Activar el toggle.
-6. Guardar cambios.
-
-> Si no aparece en Providers/Email, buscar en:
-> **Authentication** → **Security** → sección **Password Security**.
-
-### Comportamiento tras activarlo
-
-- Los nuevos registros (`/auth/v1/signup`) con contraseñas filtradas reciben error:
-  `"Password should not be part of a data breach"`.
-- El cambio de contraseña (`supabase.auth.updateUser({ password })`) también verifica.
-- Las contraseñas **existentes** no se validan retroactivamente.
-- La verificación usa k-anonymity: solo se envían los primeros 5 caracteres del hash
-  SHA-1, nunca la contraseña en texto plano.
+> Si no aparece ahí: **Authentication** → **Security** → **Password Security**.
 
 ---
 
-## Resumen de estado post-fixes
+## PROBLEMA 5 — Cierre mensual borraba reservas permanentemente
+
+### Qué hace la migración `20260518000001`
+- Crea la tabla `reservas_archivadas` (misma estructura que `reservas`, sin FK constraints,
+  con columnas extra: `complejo_id`, `archivado_en`, `archivado_por_mes`, `archivado_por_anio`).
+- Crea la función `cerrar_mes_complejo(complejo_id, anio, mes)` que:
+  1. Verifica ownership del complejo.
+  2. Calcula KPIs.
+  3. Guarda KPIs en `resumen_meses` (upsert idempotente).
+  4. Copia reservas a `reservas_archivadas`.
+  5. Borra reservas de la tabla operativa.
+- Actualiza el job pg_cron para archivar en lugar de borrar directo.
+- RLS sobre `reservas_archivadas`: solo el admin del complejo puede leer.
+
+### Verificación
+```sql
+-- 1. Tabla existe:
+SELECT tablename, rowsecurity FROM pg_tables
+WHERE schemaname='public' AND tablename='reservas_archivadas';
+-- Esperado: rowsecurity=true
+
+-- 2. Función tiene permisos correctos:
+SELECT grantee FROM information_schema.routine_privileges
+WHERE routine_name='cerrar_mes_complejo';
+-- Esperado: solo 'authenticated'
+
+-- 3. Cron actualizado:
+SELECT jobname, command FROM cron.job WHERE jobname='limpiar-reservas-antiguas';
+-- Esperado: command contiene 'INSERT INTO public.reservas_archivadas'
+
+-- 4. Probar el cierre (con admin autenticado):
+SELECT cerrar_mes_complejo('<complejo_id>', 2025, 1);
+-- Esperado: {"ok": true, "ya_cerrado": false, "totalReservas": N, ...}
+-- Segunda llamada (idempotencia):
+SELECT cerrar_mes_complejo('<complejo_id>', 2025, 1);
+-- Esperado: {"ok": true, "ya_cerrado": true, ...}
+```
+
+---
+
+## PROBLEMA 6 — Race condition al registrar asistencia
+
+### Qué hace la migración `20260518000002`
+- Crea la función `marcar_asistencia(reserva_id, asistio)` con `SELECT FOR UPDATE`
+  para bloquear la fila durante la operación.
+- Códigos de retorno:
+  - `UPDATED` → registrado exitosamente
+  - `ALREADY_MARKED` → ya tenía ese valor (idempotente, `ok=true`)
+  - `CONFLICT` → ya marcado con valor **distinto** (`ok=false`, incluye `actual`)
+  - `NOT_FOUND` → reserva inexistente o sin permiso
+  - `UNAUTHORIZED` → sin sesión válida
+
+### Verificación
+```sql
+-- Como admin autenticado:
+SELECT marcar_asistencia('<reserva_id>', true);
+-- Esperado: {"ok": true, "code": "UPDATED", "asistio": true}
+
+SELECT marcar_asistencia('<reserva_id>', true);
+-- Esperado: {"ok": true, "code": "ALREADY_MARKED", "asistio": true}
+
+SELECT marcar_asistencia('<reserva_id>', false);
+-- Esperado: {"ok": false, "code": "CONFLICT", "actual": true, "msg": "..."}
+```
+
+```bash
+# Como anon (sin JWT de usuario):
+curl -X POST "https://ztwtxrsanjehzpdbitxg.supabase.co/rest/v1/rpc/marcar_asistencia" \
+  -H "apikey: <ANON_KEY>" -H "Authorization: Bearer <ANON_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{"p_reserva_id":"<uuid>","p_asistio":true}'
+# Esperado: 403 permission denied
+```
+
+---
+
+## Resumen de estado
 
 | # | Problema | Archivo/Acción | Estado |
 |---|---|---|---|
 | 1 | Funciones SECURITY DEFINER expuestas a `anon` | `20250513000001_fix_functions_security.sql` | ⏳ Pendiente |
 | 2 | Buckets con listing abierto | `20250513000002_fix_storage_listing.sql` | ⏳ Pendiente |
-| 3 | `pg_net` en schema `public` | Dashboard → Extensions (ver instrucciones arriba) | ⏳ Pendiente |
-| 4 | Leaked password protection deshabilitado | Dashboard → Authentication → Providers → Email | ⏳ Pendiente |
+| 3 | `pg_net` en schema `public` | Dashboard → Extensions (ver arriba) | ⏳ Manual |
+| 4 | Leaked password protection deshabilitado | Dashboard → Authentication → Providers → Email | ⏳ Manual |
+| 5 | Cierre mensual borraba datos irrecuperables | `20260518000001_cierre_mensual_archivado.sql` | ⏳ Pendiente |
+| 6 | Race condition en marcar asistencia | `20260518000002_marcar_asistencia_safe.sql` | ⏳ Pendiente |

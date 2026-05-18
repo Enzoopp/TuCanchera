@@ -218,19 +218,74 @@ CREATE TRIGGER on_auth_user_created
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
 -- ============================================================================
+-- TABLA: reservas_archivadas
+-- Propósito: Historial de reservas archivadas al cerrar un mes.
+-- Las reservas se copian aquí desde reservas (operativa), luego se eliminan
+-- de la tabla principal para mantenerla liviana.
+-- Sin FK constraints: los datos deben persistir aunque se borren canchas/perfiles.
+-- complejo_id denormalizado para queries de historial por complejo.
+-- ============================================================================
+CREATE TABLE reservas_archivadas (
+  id                 UUID        NOT NULL PRIMARY KEY,
+  cancha_id          UUID,                      -- sin FK (datos de archivo)
+  cliente_id         UUID,                      -- sin FK (datos de archivo)
+  fecha              DATE        NOT NULL,
+  hora_inicio        TIME        NOT NULL,
+  hora_fin           TIME        NOT NULL,
+  metodo_pago        TEXT        NOT NULL,
+  estado             TEXT        NOT NULL,
+  mp_payment_id      TEXT,
+  asistio            BOOLEAN,
+  creado_en          TIMESTAMPTZ,
+  complejo_id        UUID        NOT NULL,
+  archivado_en       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  archivado_por_mes  INTEGER     NOT NULL,
+  archivado_por_anio INTEGER     NOT NULL
+);
+
+CREATE INDEX idx_reservas_archivadas_complejo_fecha
+  ON reservas_archivadas (complejo_id, fecha);
+CREATE INDEX idx_reservas_archivadas_cierre
+  ON reservas_archivadas (complejo_id, archivado_por_anio, archivado_por_mes);
+
+-- ============================================================================
 -- LIMPIEZA AUTOMÁTICA con pg_cron
--- Borra reservas en 'confirmada' con más de 60 días de antigüedad.
+-- Archiva reservas en 'confirmada' con más de 60 días de antigüedad
+-- y las borra de la tabla operativa.
 -- Se ejecuta todos los lunes a las 03:00 UTC.
--- Nota: los KPIs deben haberse guardado en resumen_meses antes de que
--- el cron actúe sobre ese período (el cierre manual lo garantiza).
 -- ============================================================================
 SELECT cron.schedule(
   'limpiar-reservas-antiguas',
   '0 3 * * 1',  -- lunes 03:00 UTC
   $$
+    -- Paso 1: Archivar
+    INSERT INTO public.reservas_archivadas (
+      id, cancha_id, cliente_id,
+      fecha, hora_inicio, hora_fin,
+      metodo_pago, estado, mp_payment_id,
+      asistio, creado_en,
+      complejo_id, archivado_en,
+      archivado_por_mes, archivado_por_anio
+    )
+    SELECT
+      r.id, r.cancha_id, r.cliente_id,
+      r.fecha, r.hora_inicio, r.hora_fin,
+      r.metodo_pago, r.estado, r.mp_payment_id,
+      r.asistio, r.creado_en,
+      ca.complejo_id, NOW(),
+      EXTRACT(MONTH FROM r.fecha)::INTEGER,
+      EXTRACT(YEAR  FROM r.fecha)::INTEGER
+    FROM   public.reservas r
+    JOIN   public.canchas ca ON ca.id = r.cancha_id
+    WHERE  r.estado   = 'confirmada'
+      AND  r.creado_en < NOW() - INTERVAL '60 days'
+    ON CONFLICT (id) DO NOTHING;
+
+    -- Paso 2: Borrar archivadas de la tabla operativa
     DELETE FROM public.reservas
-    WHERE estado = 'confirmada'
-      AND creado_en < NOW() - INTERVAL '60 days';
+    WHERE  estado    = 'confirmada'
+      AND  creado_en < NOW() - INTERVAL '60 days'
+      AND  id IN (SELECT id FROM public.reservas_archivadas);
   $$
 );
 
@@ -539,6 +594,145 @@ CREATE POLICY "resumen_meses_update_admin"
 CREATE POLICY "resumen_meses_select_superadmin"
   ON resumen_meses FOR SELECT
   USING (get_my_rol() = 'superadmin');
+
+-- ============================================================================
+-- RLS: reservas_archivadas
+-- Solo el admin del complejo puede leer su historial archivado.
+-- Escritura solo via cerrar_mes_complejo() (SECURITY DEFINER).
+-- ============================================================================
+ALTER TABLE reservas_archivadas ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "archivadas_select_admin"
+  ON reservas_archivadas FOR SELECT
+  USING (
+    complejo_id IN (
+      SELECT c.id FROM complejos c
+      JOIN profiles p ON p.id = c.admin_id
+      WHERE p.user_id = auth.uid()
+    )
+  );
+
+-- ============================================================================
+-- FUNCIÓN: cerrar_mes_complejo(complejo_id, anio, mes)
+-- Cierra un mes atómicamente:
+--   1. Verifica que el complejo pertenece al admin autenticado.
+--   2. Calcula KPIs desde reservas + canchas.
+--   3. Guarda KPIs en resumen_meses (upsert).
+--   4. Copia reservas del mes a reservas_archivadas (INSERT ... ON CONFLICT DO NOTHING).
+--   5. Borra reservas del mes de la tabla operativa.
+-- Retorna JSONB con los KPIs para generar el PDF en el frontend.
+-- SECURITY DEFINER para escribir en reservas_archivadas sin grant a authenticated.
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.cerrar_mes_complejo(
+  p_complejo_id UUID,
+  p_anio        INTEGER,
+  p_mes         INTEGER
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_profile_id  UUID;
+  v_desde       DATE;
+  v_hasta       DATE;
+  v_total       INTEGER;
+  v_confirmadas INTEGER;
+  v_canceladas  INTEGER;
+  v_asistieron  INTEGER;
+  v_no_asist    INTEGER;
+  v_ingresos    NUMERIC(12,2);
+BEGIN
+  SELECT p.id INTO v_profile_id FROM public.profiles p WHERE p.user_id = auth.uid();
+  IF v_profile_id IS NULL THEN RAISE EXCEPTION 'UNAUTHORIZED'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.complejos WHERE id = p_complejo_id AND admin_id = v_profile_id)
+    THEN RAISE EXCEPTION 'UNAUTHORIZED: complejo no pertenece a este admin'; END IF;
+  IF p_mes < 1 OR p_mes > 12 THEN RAISE EXCEPTION 'INVALID_MES'; END IF;
+
+  -- Idempotencia: si ya está cerrado, devolver los KPIs guardados
+  IF EXISTS (SELECT 1 FROM public.resumen_meses WHERE complejo_id = p_complejo_id AND anio = p_anio AND mes = p_mes) THEN
+    RETURN (SELECT jsonb_build_object('ok',true,'ya_cerrado',true,'totalReservas',total_reservas,'confirmadas',confirmadas,'canceladas',canceladas,'asistieron',asistieron,'noAsistieron',no_asistieron,'ingresos',ingresos)
+            FROM public.resumen_meses WHERE complejo_id = p_complejo_id AND anio = p_anio AND mes = p_mes);
+  END IF;
+
+  v_desde := make_date(p_anio, p_mes, 1);
+  v_hasta := (make_date(p_anio, p_mes, 1) + INTERVAL '1 month - 1 day')::DATE;
+
+  SELECT COUNT(*), COUNT(*) FILTER (WHERE r.estado='confirmada'), COUNT(*) FILTER (WHERE r.estado='cancelada_admin'),
+    COUNT(*) FILTER (WHERE r.asistio=true), COUNT(*) FILTER (WHERE r.asistio=false),
+    COALESCE(SUM(ca.precio) FILTER (WHERE r.estado='confirmada'),0)
+  INTO v_total, v_confirmadas, v_canceladas, v_asistieron, v_no_asist, v_ingresos
+  FROM public.reservas r JOIN public.canchas ca ON ca.id=r.cancha_id
+  WHERE ca.complejo_id=p_complejo_id AND r.fecha BETWEEN v_desde AND v_hasta;
+
+  INSERT INTO public.resumen_meses(complejo_id,anio,mes,total_reservas,confirmadas,canceladas,asistieron,no_asistieron,ingresos,cerrado_en)
+  VALUES(p_complejo_id,p_anio,p_mes,v_total,v_confirmadas,v_canceladas,v_asistieron,v_no_asist,v_ingresos,NOW())
+  ON CONFLICT (complejo_id,anio,mes) DO UPDATE SET total_reservas=EXCLUDED.total_reservas,confirmadas=EXCLUDED.confirmadas,canceladas=EXCLUDED.canceladas,asistieron=EXCLUDED.asistieron,no_asistieron=EXCLUDED.no_asistieron,ingresos=EXCLUDED.ingresos,cerrado_en=EXCLUDED.cerrado_en;
+
+  INSERT INTO public.reservas_archivadas(id,cancha_id,cliente_id,fecha,hora_inicio,hora_fin,metodo_pago,estado,mp_payment_id,asistio,creado_en,complejo_id,archivado_en,archivado_por_mes,archivado_por_anio)
+  SELECT r.id,r.cancha_id,r.cliente_id,r.fecha,r.hora_inicio,r.hora_fin,r.metodo_pago,r.estado,r.mp_payment_id,r.asistio,r.creado_en,ca.complejo_id,NOW(),p_mes,p_anio
+  FROM public.reservas r JOIN public.canchas ca ON ca.id=r.cancha_id
+  WHERE ca.complejo_id=p_complejo_id AND r.fecha BETWEEN v_desde AND v_hasta
+  ON CONFLICT (id) DO NOTHING;
+
+  DELETE FROM public.reservas WHERE id IN (
+    SELECT r.id FROM public.reservas r JOIN public.canchas ca ON ca.id=r.cancha_id
+    WHERE ca.complejo_id=p_complejo_id AND r.fecha BETWEEN v_desde AND v_hasta
+  );
+
+  RETURN jsonb_build_object('ok',true,'ya_cerrado',false,'totalReservas',v_total,'confirmadas',v_confirmadas,'canceladas',v_canceladas,'asistieron',v_asistieron,'noAsistieron',v_no_asist,'ingresos',v_ingresos);
+END;
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.cerrar_mes_complejo(UUID,INTEGER,INTEGER) FROM PUBLIC;
+GRANT  EXECUTE ON FUNCTION public.cerrar_mes_complejo(UUID,INTEGER,INTEGER) TO authenticated;
+
+-- ============================================================================
+-- FUNCIÓN: marcar_asistencia(reserva_id, asistio)
+-- Registra la asistencia de forma segura ante accesos concurrentes.
+-- Usa SELECT FOR UPDATE para bloquear la fila antes de leer/escribir.
+-- Retorna JSONB con código: UPDATED | ALREADY_MARKED | CONFLICT | NOT_FOUND | UNAUTHORIZED
+-- SECURITY DEFINER para poder hacer FOR UPDATE con el lock a nivel de fila.
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.marcar_asistencia(
+  p_reserva_id UUID,
+  p_asistio    BOOLEAN
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_profile_id UUID;
+  v_reserva    public.reservas%ROWTYPE;
+BEGIN
+  SELECT id INTO v_profile_id FROM public.profiles WHERE user_id = auth.uid();
+  IF v_profile_id IS NULL THEN RETURN jsonb_build_object('ok',false,'code','UNAUTHORIZED'); END IF;
+
+  SELECT r.* INTO v_reserva
+  FROM public.reservas r JOIN public.canchas ca ON ca.id=r.cancha_id JOIN public.complejos co ON co.id=ca.complejo_id
+  WHERE r.id=p_reserva_id AND co.admin_id=v_profile_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN RETURN jsonb_build_object('ok',false,'code','NOT_FOUND'); END IF;
+
+  IF v_reserva.asistio IS NOT DISTINCT FROM p_asistio THEN
+    RETURN jsonb_build_object('ok',true,'code','ALREADY_MARKED','asistio',v_reserva.asistio);
+  END IF;
+
+  IF v_reserva.asistio IS NOT NULL THEN
+    RETURN jsonb_build_object('ok',false,'code','CONFLICT','actual',v_reserva.asistio,'msg',format('La asistencia ya fue marcada como %s por otra sesión.',CASE WHEN v_reserva.asistio THEN 'presente' ELSE 'ausente' END));
+  END IF;
+
+  UPDATE public.reservas SET asistio=p_asistio WHERE id=p_reserva_id;
+  RETURN jsonb_build_object('ok',true,'code','UPDATED','asistio',p_asistio);
+END;
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.marcar_asistencia(UUID,BOOLEAN) FROM PUBLIC;
+GRANT  EXECUTE ON FUNCTION public.marcar_asistencia(UUID,BOOLEAN) TO authenticated;
 
 -- ============================================================================
 -- STORAGE: buckets públicos para logos y galería de complejos
