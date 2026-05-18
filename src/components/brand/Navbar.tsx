@@ -35,6 +35,7 @@ export default function Navbar({ transparent = false }: NavbarProps) {
       }}
     >
       <div
+        className="navbar-inner"
         style={{
           maxWidth: 1280,
           margin: '0 auto',
@@ -49,7 +50,7 @@ export default function Navbar({ transparent = false }: NavbarProps) {
           <Logo size="sm" dark={transparent} />
         </Link>
 
-        <nav style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <nav className="navbar-nav" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {user ? (
             <>
               {rol === 'superadmin' && (
@@ -134,6 +135,7 @@ export default function Navbar({ transparent = false }: NavbarProps) {
             <>
               <Link
                 to="/login"
+                className="navbar-login-link"
                 style={{
                   padding: '8px 14px',
                   borderRadius: 10,
@@ -144,10 +146,12 @@ export default function Navbar({ transparent = false }: NavbarProps) {
                   textDecoration: 'none',
                 }}
               >
-                Iniciar sesión
+                <span className="navbar-login-full">Iniciar sesión</span>
+                <span className="navbar-login-short">Ingresar</span>
               </Link>
               <Link
                 to="/register"
+                className="navbar-register-link"
                 style={{
                   padding: '10px 18px',
                   borderRadius: 10,
@@ -166,6 +170,17 @@ export default function Navbar({ transparent = false }: NavbarProps) {
           )}
         </nav>
       </div>
+      <style>{`
+        .navbar-login-short { display: none; }
+        @media (max-width: 480px) {
+          .navbar-inner { padding: 12px 16px !important; }
+          .navbar-nav { gap: 4px !important; }
+          .navbar-login-full { display: none; }
+          .navbar-login-short { display: inline; }
+          .navbar-login-link { padding: 7px 10px !important; font-size: 0.83rem !important; }
+          .navbar-register-link { padding: 8px 12px !important; font-size: 0.83rem !important; }
+        }
+      `}</style>
     </header>
   )
 }

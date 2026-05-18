@@ -54,7 +54,7 @@ export default function Complejo() {
       <Navbar />
 
       {/* ── HERO 420px ────────────────────────────────────────────────────── */}
-      <div style={{ position: 'relative', height: 420, overflow: 'hidden' }}>
+      <div className="complex-hero" style={{ position: 'relative', height: 420, overflow: 'hidden' }}>
         <img
           src={heroImg}
           alt={complejo.nombre}
@@ -113,6 +113,7 @@ export default function Complejo() {
         >
           {/* Logo o inicial */}
           <div
+            className="complex-logo"
             style={{
               width: 80,
               height: 80,
@@ -150,7 +151,7 @@ export default function Complejo() {
             )}
           </div>
 
-          <div style={{ paddingBottom: 20, minWidth: 0, flex: 1 }}>
+          <div className="complex-info-text" style={{ paddingBottom: 20, minWidth: 0, flex: 1 }}>
             <h1
               style={{
                 fontFamily: "'Space Grotesk', sans-serif",
@@ -195,8 +196,9 @@ export default function Complejo() {
             </div>
           </div>
 
-          <div style={{ marginLeft: 'auto', paddingBottom: 20 }}>
+          <div className="complex-cta" style={{ marginLeft: 'auto', paddingBottom: 20 }}>
             <a
+              className="complex-cta-btn"
               href="#canchas"
               style={{
                 display: 'inline-flex',
@@ -516,9 +518,43 @@ export default function Complejo() {
       )}
 
       <style>{`
+        /* Tablet */
         @media (max-width: 900px) {
-          .complex-hero-info { padding: 20px 20px !important; }
+          .complex-hero-info { padding: 20px !important; }
           .complex-sport-chips { padding-left: 20px !important; padding-right: 20px !important; }
+        }
+        /* Mobile */
+        @media (max-width: 640px) {
+          .complex-hero { height: 320px !important; }
+          .complex-hero-info {
+            padding: 14px 14px 18px !important;
+            gap: 10px !important;
+            align-items: flex-start !important;
+          }
+          .complex-logo {
+            width: 56px !important;
+            height: 56px !important;
+            margin-bottom: 0 !important;
+            border-radius: 12px !important;
+          }
+          .complex-info-text {
+            padding-bottom: 0 !important;
+          }
+          .complex-cta {
+            flex-basis: 100% !important;
+            width: 100% !important;
+            margin-left: 0 !important;
+            padding-bottom: 0 !important;
+          }
+          .complex-cta-btn {
+            width: 100% !important;
+            box-sizing: border-box !important;
+            justify-content: center !important;
+            display: inline-flex !important;
+          }
+          .complex-sport-chips {
+            padding: 18px 14px 14px !important;
+          }
         }
       `}</style>
     </div>

@@ -221,7 +221,6 @@ export default function ResumenesMensuales() {
   }
 
   const pageStyle: CSSProperties = {
-    padding: '32px 32px 60px',
     maxWidth: 1200,
     fontFamily: "'DM Sans', sans-serif",
   }
@@ -229,7 +228,7 @@ export default function ResumenesMensuales() {
   const mesLabel = `${MESES[mesPasado.mes]}${mesPasado.anio !== hoy.getFullYear() ? ` ${mesPasado.anio}` : ''}`
 
   return (
-    <div style={pageStyle}>
+    <div className="admin-page" style={pageStyle}>
       {/* Header */}
       <div
         style={{

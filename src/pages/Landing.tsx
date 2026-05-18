@@ -182,7 +182,7 @@ export default function Landing() {
             }}
             className="landing-search"
           >
-            <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px' }}>
+            <div className="landing-search-input" style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px' }}>
               <Search size={18} color="#94a3b8" />
               <input
                 placeholder="Barrio, complejo o deporte…"
@@ -199,60 +199,62 @@ export default function Landing() {
                 }}
               />
             </div>
-            <div style={{ width: 1, background: '#e2e8f0', alignSelf: 'center', height: 28 }} />
-            <div style={{ position: 'relative', display: 'flex', alignItems: 'center', minWidth: 140 }}>
-              <select
-                value={sport}
-                onChange={(e) => setSport(e.target.value as SportFilter)}
+            <div className="landing-search-row2" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div className="landing-search-divider" style={{ width: 1, background: '#e2e8f0', alignSelf: 'center', height: 28 }} />
+              <div className="landing-search-sport" style={{ position: 'relative', display: 'flex', alignItems: 'center', minWidth: 140 }}>
+                <select
+                  value={sport}
+                  onChange={(e) => setSport(e.target.value as SportFilter)}
+                  style={{
+                    appearance: 'none',
+                    border: 'none',
+                    outline: 'none',
+                    background: 'transparent',
+                    padding: '8px 36px 8px 14px',
+                    fontSize: '0.9rem',
+                    fontFamily: "'DM Sans', sans-serif",
+                    fontWeight: 600,
+                    color: '#374151',
+                    cursor: 'pointer',
+                    width: '100%',
+                  }}
+                >
+                  {SPORTS.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+                <span style={{ position: 'absolute', right: 10, pointerEvents: 'none' }}>
+                  <ChevronDown size={16} color="#6b7280" />
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  const el = document.getElementById('complejos')
+                  if (el) el.scrollIntoView({ behavior: 'smooth' })
+                }}
                 style={{
-                  appearance: 'none',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '12px 20px',
+                  borderRadius: 12,
                   border: 'none',
-                  outline: 'none',
-                  background: 'transparent',
-                  padding: '8px 36px 8px 14px',
-                  fontSize: '0.9rem',
+                  background: '#2563eb',
+                  color: 'white',
                   fontFamily: "'DM Sans', sans-serif",
-                  fontWeight: 600,
-                  color: '#374151',
+                  fontSize: '0.9rem',
+                  fontWeight: 700,
                   cursor: 'pointer',
-                  width: '100%',
+                  boxShadow: '0 4px 14px rgba(37,99,235,0.35)',
                 }}
               >
-                {SPORTS.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-              <span style={{ position: 'absolute', right: 10, pointerEvents: 'none' }}>
-                <ChevronDown size={16} color="#6b7280" />
-              </span>
+                <Search size={16} />
+                Buscar
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={() => {
-                const el = document.getElementById('complejos')
-                if (el) el.scrollIntoView({ behavior: 'smooth' })
-              }}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 8,
-                padding: '12px 20px',
-                borderRadius: 12,
-                border: 'none',
-                background: '#2563eb',
-                color: 'white',
-                fontFamily: "'DM Sans', sans-serif",
-                fontSize: '0.9rem',
-                fontWeight: 700,
-                cursor: 'pointer',
-                boxShadow: '0 4px 14px rgba(37,99,235,0.35)',
-              }}
-            >
-              <Search size={16} />
-              Buscar
-            </button>
           </div>
 
           {/* Stats */}
@@ -459,6 +461,35 @@ export default function Landing() {
           <span style={{ color: '#2563eb' }}>Privacidad</span>
         </p>
       </div>
+
+      <style>{`
+        @media (max-width: 600px) {
+          /* Stack search bar vertically on mobile */
+          .landing-search {
+            flex-direction: column !important;
+            gap: 0 !important;
+            padding: 6px !important;
+          }
+          .landing-search-input {
+            padding: 10px 14px !important;
+            border-bottom: 1px solid #f1f5f9;
+          }
+          .landing-search-row2 {
+            width: 100%;
+            padding: 6px !important;
+          }
+          .landing-search-divider {
+            display: none !important;
+          }
+          .landing-search-sport {
+            flex: 1 !important;
+            min-width: 0 !important;
+          }
+          .landing-search-sport select {
+            width: 100% !important;
+          }
+        }
+      `}</style>
     </div>
   )
 }

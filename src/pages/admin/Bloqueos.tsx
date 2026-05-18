@@ -123,8 +123,8 @@ export default function Bloqueos() {
 
   return (
     <div
+      className="admin-page bloqueos-wrapper"
       style={{
-        padding: '32px 32px 60px',
         maxWidth: 1400,
         margin: '0 auto',
         fontFamily: "'DM Sans', sans-serif",
@@ -151,6 +151,7 @@ export default function Bloqueos() {
 
       {/* Selection panel */}
       <div
+        className="bloqueos-selection"
         style={{
           background: 'white',
           borderRadius: 16,
@@ -300,6 +301,7 @@ export default function Bloqueos() {
 
       {/* Body */}
       <div
+        className="bloqueos-body"
         style={{
           display: 'grid',
           gridTemplateColumns: 'minmax(0, 1fr) 280px',
@@ -652,6 +654,13 @@ export default function Bloqueos() {
 
       {/* Toast */}
       {toast && <Toast message={toast} />}
+
+      <style>{`
+        @media (max-width: 768px) {
+          .bloqueos-selection { grid-template-columns: 1fr !important; }
+          .bloqueos-body { grid-template-columns: 1fr !important; }
+        }
+      `}</style>
     </div>
   )
 }

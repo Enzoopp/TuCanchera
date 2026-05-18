@@ -193,7 +193,7 @@ export default function GestionCanchas() {
   const inactiveCount = (canchas?.length ?? 0) - activeCount
 
   return (
-    <div style={{ padding: '32px 32px 60px', maxWidth: 1400, margin: '0 auto', fontFamily: "'DM Sans', sans-serif" }}>
+    <div className="admin-page" style={{ maxWidth: 1400, margin: '0 auto', fontFamily: "'DM Sans', sans-serif" }}>
       {/* Header */}
       <div
         style={{

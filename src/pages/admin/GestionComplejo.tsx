@@ -167,6 +167,7 @@ export default function GestionComplejo() {
     <div style={{ fontFamily: "'DM Sans', sans-serif", background: '#f8fafc', minHeight: '100vh' }}>
       {/* Sticky header */}
       <div
+        className="complex-sticky-header"
         style={{
           position: 'sticky',
           top: 0,
@@ -222,7 +223,7 @@ export default function GestionComplejo() {
         </div>
       </div>
 
-      <div style={{ padding: '28px 32px 60px', maxWidth: 1400, margin: '0 auto' }}>
+      <div className="admin-page" style={{ maxWidth: 1400, margin: '0 auto' }}>
         <div
           className="complex-grid"
           style={{
@@ -846,6 +847,9 @@ export default function GestionComplejo() {
           .complex-preview {
             position: static !important;
           }
+        }
+        @media (max-width: 640px) {
+          .complex-sticky-header { padding: 12px 16px !important; }
         }
       `}</style>
     </div>

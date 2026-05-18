@@ -167,8 +167,8 @@ export default function Reservas() {
 
   return (
     <div
+      className="admin-page"
       style={{
-        padding: '32px 32px 60px',
         maxWidth: 1400,
         margin: '0 auto',
         fontFamily: "'DM Sans', sans-serif",

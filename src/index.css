@@ -266,3 +266,53 @@
 .page-enter {
   animation: fadeInUp 0.4s ease both;
 }
+
+/* ---------------------------------------------------------------------- */
+/* Admin pages — responsive padding                                       */
+/* ---------------------------------------------------------------------- */
+.admin-page {
+  padding: clamp(16px, 4vw, 32px) clamp(16px, 4vw, 32px) 60px;
+  max-width: 1400px;
+  margin: 0 auto;
+  font-family: 'DM Sans', sans-serif;
+}
+
+/* Two-column admin layout → single column on tablet/mobile */
+.admin-two-col {
+  display: grid;
+  gap: 24px;
+}
+@media (min-width: 900px) {
+  .admin-two-col-sidebar {
+    grid-template-columns: minmax(0, 1fr) 340px;
+  }
+  .admin-two-col-equal {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+/* Stat/metric cards row → auto-wrap on small screens */
+.admin-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 16px;
+}
+
+/* Selection/filter panels → stack on mobile */
+@media (max-width: 640px) {
+  .admin-filter-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .admin-page h1 {
+    font-size: clamp(1.4rem, 5vw, 1.9rem);
+  }
+}
+
+/* Tables inside admin pages — horizontal scroll on mobile */
+.admin-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.admin-table-wrap table {
+  min-width: 600px;
+}

@@ -585,13 +585,12 @@ export default function Estadisticas() {
   ]
 
   const pageStyle: CSSProperties = {
-    padding: '32px 32px 60px',
     maxWidth: 1400,
     fontFamily: "'DM Sans', sans-serif",
   }
 
   return (
-    <div style={pageStyle}>
+    <div className="admin-page" style={pageStyle}>
       {/* Header */}
       <div
         style={{
@@ -980,6 +979,7 @@ export default function Estadisticas() {
 
               {/* Two-column charts */}
               <div
+                className="estadisticas-charts-grid"
                 style={{
                   display: 'grid',
                   gridTemplateColumns: 'minmax(0, 2fr) minmax(0, 1fr)',
@@ -1214,6 +1214,13 @@ export default function Estadisticas() {
           )}
         </>
       )}
+      <style>{`
+        @media (max-width: 768px) {
+          .estadisticas-charts-grid {
+            grid-template-columns: 1fr !important;
+          }
+        }
+      `}</style>
     </div>
   )
 }

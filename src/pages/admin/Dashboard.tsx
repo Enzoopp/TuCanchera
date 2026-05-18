@@ -331,6 +331,11 @@ export default function Dashboard() {
             grid-template-columns: minmax(0, 1fr) !important;
           }
         }
+        @media (max-width: 640px) {
+          .dashboard-main-grid {
+            gap: 16px !important;
+          }
+        }
       `}</style>
     </div>
   )
