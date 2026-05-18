@@ -77,15 +77,36 @@ export async function updateComplejo(
   return data as Complejo
 }
 
+/**
+ * Extrae el storage path de una URL pública de Supabase Storage.
+ * URL format: .../storage/v1/object/public/<bucket>/<path>
+ * Devuelve null si la URL no corresponde al bucket esperado.
+ */
+function storagePathFromUrl(url: string, bucket: string): string | null {
+  const marker = `/storage/v1/object/public/${bucket}/`
+  const idx = url.indexOf(marker)
+  if (idx === -1) return null
+  return decodeURIComponent(url.slice(idx + marker.length))
+}
+
 export async function uploadLogo(complejoId: string, file: File): Promise<string> {
+  // Borrar logos anteriores para evitar archivos huérfanos en el bucket.
+  // Se listan todos los archivos en la carpeta del complejo y se eliminan.
+  // Errores aquí no abortan la operación (si no había logo previo, list devuelve vacío).
+  const { data: existentes } = await supabase.storage.from('logos').list(complejoId)
+  if (existentes && existentes.length > 0) {
+    const paths = existentes.map((f) => `${complejoId}/${f.name}`)
+    await supabase.storage.from('logos').remove(paths)
+  }
+
   const ext = file.name.split('.').pop()
-  const path = `${complejoId}/logo-${Date.now()}.${ext}`
-  const { error } = await supabase.storage.from('logos').upload(path, file, {
+  const storagePath = `${complejoId}/logo-${Date.now()}.${ext}`
+  const { error } = await supabase.storage.from('logos').upload(storagePath, file, {
     cacheControl: '3600',
     upsert: true,
   })
   if (error) throw error
-  const { data } = supabase.storage.from('logos').getPublicUrl(path)
+  const { data } = supabase.storage.from('logos').getPublicUrl(storagePath)
   return data.publicUrl
 }
 
@@ -111,8 +132,25 @@ export async function uploadFotoComplejo(
 }
 
 export async function deleteFotoComplejo(id: string) {
+  // Leer la URL antes de borrar para poder eliminar el archivo del bucket
+  const { data: foto, error: fetchErr } = await supabase
+    .from('fotos_complejo')
+    .select('url')
+    .eq('id', id)
+    .single()
+  if (fetchErr) throw fetchErr
+
+  // Borrar fila de DB
   const { error } = await supabase.from('fotos_complejo').delete().eq('id', id)
   if (error) throw error
+
+  // Borrar archivo del bucket (no lanzar error si falla — la fila ya fue borrada)
+  if (foto?.url) {
+    const storagePath = storagePathFromUrl(foto.url, 'fotos-complejos')
+    if (storagePath) {
+      await supabase.storage.from('fotos-complejos').remove([storagePath])
+    }
+  }
 }
 
 export async function reordenarFotos(fotos: { id: string; orden: number }[]) {
@@ -441,7 +479,9 @@ export async function cerrarMes(
 
 /**
  * Trae el detalle de reservas archivadas de un mes ya cerrado.
- * Útil para regenerar el PDF o auditar el historial.
+ * Intenta enriquecer con nombres de canchas/clientes desde las tablas actuales
+ * (best-effort: si la cancha o el perfil fue borrado después del archivado,
+ *  canchas/profiles quedan en null pero el resto del dato sigue disponible).
  */
 export async function fetchReservasArchivadas(
   complejoId: string,
@@ -450,10 +490,7 @@ export async function fetchReservasArchivadas(
 ): Promise<ReservaAdmin[]> {
   const { data, error } = await supabase
     .from('reservas_archivadas')
-    .select(`
-      id, cancha_id, cliente_id, fecha, hora_inicio, hora_fin,
-      metodo_pago, estado, asistio, creado_en
-    `)
+    .select('id, cancha_id, cliente_id, fecha, hora_inicio, hora_fin, metodo_pago, estado, mp_payment_id, asistio, creado_en')
     .eq('complejo_id', complejoId)
     .eq('archivado_por_anio', anio)
     .eq('archivado_por_mes', mes)
@@ -462,13 +499,30 @@ export async function fetchReservasArchivadas(
 
   if (error) throw error
 
-  // Las reservas archivadas no tienen join a canchas/profiles (sin FK).
-  // Se devuelven con canchas y profiles como null para compatibilidad de tipos.
-  return (data ?? []).map((r) => ({
+  const rows = data ?? []
+  if (rows.length === 0) return []
+
+  // Lookup de nombres en tablas actuales (best-effort, sin FK en el archivo)
+  const canchaIds  = [...new Set(rows.map((r) => r.cancha_id).filter(Boolean))]
+  const clienteIds = [...new Set(rows.map((r) => r.cliente_id).filter(Boolean))]
+
+  const [canchasRes, profilesRes] = await Promise.all([
+    canchaIds.length > 0
+      ? supabase.from('canchas').select('id, nombre, tipo, precio').in('id', canchaIds)
+      : Promise.resolve({ data: [], error: null }),
+    clienteIds.length > 0
+      ? supabase.from('profiles').select('id, nombre, telefono, email').in('id', clienteIds)
+      : Promise.resolve({ data: [], error: null }),
+  ])
+
+  const canchasMap  = new Map((canchasRes.data  ?? []).map((c) => [c.id, c]))
+  const profilesMap = new Map((profilesRes.data ?? []).map((p) => [p.id, p]))
+
+  return rows.map((r) => ({
     ...r,
-    canchas:  null,
-    profiles: null,
-  })) as ReservaAdmin[]
+    canchas:  (canchasMap.get(r.cancha_id)   ?? null) as ReservaAdmin['canchas'],
+    profiles: (profilesMap.get(r.cliente_id) ?? null) as ReservaAdmin['profiles'],
+  }))
 }
 
 // ---------- Estadísticas ----------

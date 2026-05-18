@@ -6,12 +6,12 @@ Auditoría completa del proyecto `ztwtxrsanjehzpdbitxg`.
 
 ## Migraciones SQL (aplicar en orden)
 
-| Archivo | Problema | Estado |
-|---|---|---|
-| `20250513000001_fix_functions_security.sql` | Funciones SECURITY DEFINER expuestas a `anon` | ⏳ Pendiente |
-| `20250513000002_fix_storage_listing.sql` | Bucket listing abierto a anon | ⏳ Pendiente |
-| `20260518000001_cierre_mensual_archivado.sql` | Cierre mensual borraba reservas permanentemente | ⏳ Pendiente |
-| `20260518000002_marcar_asistencia_safe.sql` | Race condition al registrar asistencia | ⏳ Pendiente |
+| Archivo | Problema | Código | DB |
+|---|---|---|---|
+| `20250513000001_fix_functions_security.sql` | Funciones SECURITY DEFINER expuestas a `anon` | ✅ Creada | ⏳ Aplicar |
+| `20250513000002_fix_storage_listing.sql` | Bucket listing abierto a anon | ✅ Creada | ⏳ Aplicar |
+| `20260518000001_cierre_mensual_archivado.sql` | Cierre mensual borraba reservas permanentemente | ✅ Creada | ⏳ Aplicar |
+| `20260518000002_marcar_asistencia_safe.sql` | Race condition al registrar asistencia | ✅ Creada | ⏳ Aplicar |
 
 **Cómo aplicarlas:** Dashboard → SQL Editor → pegar el contenido → Run.
 O bien: `supabase db push` si tenés el CLI configurado.
@@ -174,11 +174,13 @@ curl -X POST "https://ztwtxrsanjehzpdbitxg.supabase.co/rest/v1/rpc/marcar_asiste
 
 ## Resumen de estado
 
-| # | Problema | Archivo/Acción | Estado |
+| # | Problema | Código | DB/Dashboard |
 |---|---|---|---|
-| 1 | Funciones SECURITY DEFINER expuestas a `anon` | `20250513000001_fix_functions_security.sql` | ⏳ Pendiente |
-| 2 | Buckets con listing abierto | `20250513000002_fix_storage_listing.sql` | ⏳ Pendiente |
-| 3 | `pg_net` en schema `public` | Dashboard → Extensions (ver arriba) | ⏳ Manual |
-| 4 | Leaked password protection deshabilitado | Dashboard → Authentication → Providers → Email | ⏳ Manual |
-| 5 | Cierre mensual borraba datos irrecuperables | `20260518000001_cierre_mensual_archivado.sql` | ⏳ Pendiente |
-| 6 | Race condition en marcar asistencia | `20260518000002_marcar_asistencia_safe.sql` | ⏳ Pendiente |
+| 1 | Funciones SECURITY DEFINER expuestas a `anon` | ✅ Migración creada | ⏳ Aplicar en SQL Editor |
+| 2 | Buckets con listing abierto | ✅ Migración creada | ⏳ Aplicar en SQL Editor |
+| 3 | `pg_net` en schema `public` | ✅ Documentado | ⏳ Manual vía Dashboard Extensions |
+| 4 | Leaked password protection deshabilitado | — | ⏳ Manual vía Authentication → Email |
+| 5 | Cierre mensual borraba datos irrecuperables | ✅ Migración + código TS | ⏳ Aplicar en SQL Editor |
+| 6 | Race condition en marcar asistencia | ✅ Migración + código TS | ⏳ Aplicar en SQL Editor |
+| 7 | Archivos huérfanos en Storage | ✅ Fix en adminService.ts | ✅ En código (no requiere migración) |
+| 8 | Sin UI para historial archivado | ✅ Drawer en ResumenesMensuales | ✅ En código (no requiere migración) |

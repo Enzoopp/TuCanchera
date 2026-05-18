@@ -14,6 +14,7 @@ import { useMiComplejo } from '@/hooks/useMiComplejo'
 import {
   fetchResumenesMeses,
   fetchReservasMes,
+  fetchReservasArchivadas,
   cerrarMes,
   type ResumenMes,
   type ReservaAdmin,
@@ -25,6 +26,9 @@ import {
   CheckCircle2,
   XCircle,
   AlertTriangle,
+  FileText,
+  X,
+  RefreshCw,
 } from 'lucide-react'
 
 const MESES = [
@@ -165,6 +169,14 @@ export default function ResumenesMensuales() {
   const queryClient = useQueryClient()
   const [cerrando, setCerrando] = useState(false)
   const [modalCerrar, setModalCerrar] = useState(false)
+  const [detalleAbierto, setDetalleAbierto] = useState<{ anio: number; mes: number } | null>(null)
+
+  const { data: reservasArchivadas, isLoading: cargandoArchivo } = useQuery({
+    queryKey: ['admin-archivadas', complejo?.id, detalleAbierto?.anio, detalleAbierto?.mes],
+    queryFn: () =>
+      fetchReservasArchivadas(complejo!.id, detalleAbierto!.anio, detalleAbierto!.mes),
+    enabled: !!complejo && !!detalleAbierto,
+  })
 
   const hoy = new Date()
   const mesPasado =
@@ -477,23 +489,54 @@ export default function ResumenesMensuales() {
                     />
                   </div>
 
-                  {/* Badge cerrado */}
-                  <span
-                    style={{
-                      display: 'inline-block',
-                      padding: '5px 11px',
-                      borderRadius: 99,
-                      background: '#f1f5f9',
-                      color: '#64748b',
-                      fontSize: '0.74rem',
-                      fontWeight: 700,
-                      letterSpacing: '0.03em',
-                      textTransform: 'uppercase',
-                      flexShrink: 0,
-                    }}
-                  >
-                    Cerrado
-                  </span>
+                  {/* Acciones */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+                    <button
+                      type="button"
+                      onClick={() => setDetalleAbierto({ anio: m.anio, mes: m.mes })}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 5,
+                        padding: '6px 12px',
+                        borderRadius: 8,
+                        border: '1.5px solid #e2e8f0',
+                        background: 'white',
+                        color: '#475569',
+                        fontSize: '0.78rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        transition: 'all 0.15s',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.borderColor = '#2563eb'
+                        e.currentTarget.style.color = '#2563eb'
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.borderColor = '#e2e8f0'
+                        e.currentTarget.style.color = '#475569'
+                      }}
+                    >
+                      <FileText size={13} />
+                      Ver detalle
+                    </button>
+                    <span
+                      style={{
+                        display: 'inline-block',
+                        padding: '5px 11px',
+                        borderRadius: 99,
+                        background: '#f1f5f9',
+                        color: '#64748b',
+                        fontSize: '0.74rem',
+                        fontWeight: 700,
+                        letterSpacing: '0.03em',
+                        textTransform: 'uppercase',
+                        flexShrink: 0,
+                      }}
+                    >
+                      Cerrado
+                    </span>
+                  </div>
                 </div>
               )
             })}
@@ -508,8 +551,338 @@ export default function ResumenesMensuales() {
         onCancel={() => !cerrando && setModalCerrar(false)}
         onConfirm={handleCerrarMes}
       />}
+
+      {/* Drawer de detalle histórico */}
+      {detalleAbierto && complejo && (
+        <DetalleArchivoDrawer
+          complejo={complejo.nombre}
+          anio={detalleAbierto.anio}
+          mes={detalleAbierto.mes}
+          reservas={reservasArchivadas ?? []}
+          loading={cargandoArchivo}
+          resumen={resumenes?.find(r => r.anio === detalleAbierto.anio && r.mes === detalleAbierto.mes) ?? null}
+          onClose={() => setDetalleAbierto(null)}
+        />
+      )}
     </div>
   )
+}
+
+// ─── DetalleArchivoDrawer ─────────────────────────────────────────────────
+
+function DetalleArchivoDrawer({
+  complejo,
+  anio,
+  mes,
+  reservas,
+  loading,
+  resumen,
+  onClose,
+}: {
+  complejo: string
+  anio: number
+  mes: number
+  reservas: ReservaAdmin[]
+  loading: boolean
+  resumen: ResumenMes | null
+  onClose: () => void
+}) {
+  const [regenerando, setRegenerando] = useState(false)
+
+  async function handleRegenerarPDF() {
+    if (!resumen) return
+    setRegenerando(true)
+    try {
+      await generarPDF(complejo, anio, mes, resumen, reservas)
+    } catch {
+      // PDF generation errors are non-critical; user can retry
+    } finally {
+      setRegenerando(false)
+    }
+  }
+
+  const mesLabel = `${MESES[mes]} ${anio}`
+
+  return createPortal(
+    <>
+      {/* Overlay */}
+      <div
+        onClick={onClose}
+        style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(15,23,42,0.45)',
+          zIndex: 900,
+          animation: 'fadeIn 0.2s ease',
+        }}
+      />
+      {/* Panel */}
+      <div
+        style={{
+          position: 'fixed',
+          top: 0,
+          right: 0,
+          bottom: 0,
+          width: 'min(760px, 100vw)',
+          background: 'white',
+          zIndex: 901,
+          display: 'flex',
+          flexDirection: 'column',
+          boxShadow: '-8px 0 40px rgba(0,0,0,0.12)',
+          animation: 'slideInRight 0.25s cubic-bezier(0.4,0,0.2,1)',
+          fontFamily: "'DM Sans', sans-serif",
+        }}
+      >
+        {/* Header */}
+        <div
+          style={{
+            padding: '20px 24px',
+            borderBottom: '1px solid #f1f5f9',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexShrink: 0,
+          }}
+        >
+          <div>
+            <div
+              style={{
+                fontFamily: "'Space Grotesk', sans-serif",
+                fontSize: '1.1rem',
+                fontWeight: 800,
+                color: '#0f172a',
+                letterSpacing: '-0.02em',
+              }}
+            >
+              Historial — {mesLabel}
+            </div>
+            <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: 2 }}>
+              {loading ? 'Cargando…' : `${reservas.length} reservas archivadas`}
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {resumen && (
+              <button
+                type="button"
+                onClick={handleRegenerarPDF}
+                disabled={regenerando || loading}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '8px 14px',
+                  borderRadius: 9,
+                  border: 'none',
+                  background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
+                  color: 'white',
+                  fontSize: '0.82rem',
+                  fontWeight: 700,
+                  cursor: regenerando || loading ? 'not-allowed' : 'pointer',
+                  opacity: regenerando || loading ? 0.7 : 1,
+                  boxShadow: '0 2px 8px rgba(37,99,235,0.25)',
+                  transition: 'opacity 0.15s',
+                }}
+              >
+                <RefreshCw size={13} style={{ animation: regenerando ? 'spin 0.8s linear infinite' : 'none' }} />
+                {regenerando ? 'Generando…' : 'Regenerar PDF'}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: 8,
+                border: '1.5px solid #e2e8f0',
+                background: 'white',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                color: '#64748b',
+              }}
+            >
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+
+        {/* KPIs resumen */}
+        {resumen && (
+          <div
+            style={{
+              display: 'flex',
+              gap: 12,
+              padding: '14px 24px',
+              borderBottom: '1px solid #f1f5f9',
+              flexShrink: 0,
+              flexWrap: 'wrap',
+            }}
+          >
+            {[
+              { label: 'Total', valor: resumen.totalReservas, color: '#0f172a' },
+              { label: 'Confirmadas', valor: resumen.confirmadas, color: '#16a34a' },
+              { label: 'Canceladas', valor: resumen.canceladas, color: '#dc2626' },
+              { label: 'Asistieron', valor: resumen.asistieron, color: '#2563eb' },
+              {
+                label: 'Ingresos',
+                valor: `$${resumen.ingresos.toLocaleString('es-AR')}`,
+                color: '#7c3aed',
+              },
+            ].map((k) => (
+              <div
+                key={k.label}
+                style={{
+                  padding: '8px 14px',
+                  borderRadius: 10,
+                  background: '#f8fafc',
+                  border: '1px solid #f1f5f9',
+                  textAlign: 'center',
+                  minWidth: 80,
+                }}
+              >
+                <div
+                  style={{
+                    fontFamily: "'Space Grotesk', sans-serif",
+                    fontSize: '1rem',
+                    fontWeight: 800,
+                    color: k.color,
+                  }}
+                >
+                  {k.valor}
+                </div>
+                <div style={{ fontSize: '0.68rem', color: '#94a3b8', fontWeight: 600, marginTop: 2 }}>
+                  {k.label}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Tabla */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '0 24px 24px' }}>
+          {loading ? (
+            <div style={{ padding: 60, textAlign: 'center' }}>
+              <div
+                style={{
+                  display: 'inline-block',
+                  width: 26,
+                  height: 26,
+                  border: '3px solid #e2e8f0',
+                  borderTop: '3px solid #2563eb',
+                  borderRadius: '50%',
+                  animation: 'spin 0.8s linear infinite',
+                }}
+              />
+            </div>
+          ) : reservas.length === 0 ? (
+            <div style={{ padding: '60px 0', textAlign: 'center', color: '#94a3b8', fontSize: '0.88rem' }}>
+              No hay reservas archivadas para este mes.
+            </div>
+          ) : (
+            <table
+              style={{
+                width: '100%',
+                borderCollapse: 'collapse',
+                fontSize: '0.82rem',
+                marginTop: 16,
+              }}
+            >
+              <thead>
+                <tr>
+                  {['Fecha', 'Hora', 'Cancha', 'Cliente', 'Pago', 'Estado', 'Asistió'].map(
+                    (col) => (
+                      <th
+                        key={col}
+                        style={{
+                          padding: '8px 10px',
+                          textAlign: 'left',
+                          color: '#64748b',
+                          fontWeight: 700,
+                          fontSize: '0.74rem',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.04em',
+                          borderBottom: '2px solid #f1f5f9',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {col}
+                      </th>
+                    )
+                  )}
+                </tr>
+              </thead>
+              <tbody>
+                {reservas.map((r, i) => (
+                  <tr
+                    key={r.id}
+                    style={{ background: i % 2 === 0 ? 'white' : '#fafbfc' }}
+                  >
+                    <td style={tdStyle}>{r.fecha}</td>
+                    <td style={tdStyle}>{r.hora_inicio.slice(0, 5)}</td>
+                    <td style={tdStyle}>{r.canchas?.nombre ?? <span style={{ color: '#cbd5e1' }}>—</span>}</td>
+                    <td style={tdStyle}>{r.profiles?.nombre ?? <span style={{ color: '#cbd5e1' }}>—</span>}</td>
+                    <td style={tdStyle}>
+                      {r.metodo_pago === 'mercadopago' ? 'MercadoPago' : 'En lugar'}
+                    </td>
+                    <td style={tdStyle}>
+                      <span
+                        style={{
+                          display: 'inline-block',
+                          padding: '2px 8px',
+                          borderRadius: 99,
+                          fontSize: '0.72rem',
+                          fontWeight: 700,
+                          background:
+                            r.estado === 'confirmada'
+                              ? '#dcfce7'
+                              : r.estado === 'cancelada_admin'
+                                ? '#fee2e2'
+                                : '#fef9c3',
+                          color:
+                            r.estado === 'confirmada'
+                              ? '#16a34a'
+                              : r.estado === 'cancelada_admin'
+                                ? '#dc2626'
+                                : '#ca8a04',
+                        }}
+                      >
+                        {r.estado === 'confirmada'
+                          ? 'Conf.'
+                          : r.estado === 'cancelada_admin'
+                            ? 'Canc.'
+                            : 'Pend.'}
+                      </span>
+                    </td>
+                    <td style={tdStyle}>
+                      {r.asistio === true ? '✓' : r.asistio === false ? '✗' : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+
+      <style>{`
+        @keyframes slideInRight {
+          from { transform: translateX(100%); }
+          to   { transform: translateX(0); }
+        }
+      `}</style>
+    </>,
+    document.body
+  )
+}
+
+const tdStyle: CSSProperties = {
+  padding: '9px 10px',
+  borderBottom: '1px solid #f8fafc',
+  color: '#334155',
+  verticalAlign: 'middle',
 }
 
 // ─── KpiChip ──────────────────────────────────────────────────────────────
