@@ -147,7 +147,7 @@ export default function Landing() {
           >
             <Sparkles size={14} color="#93c5fd" />
             <span style={{ color: '#bfdbfe', fontSize: '0.8rem', fontWeight: 600 }}>
-              Disponible en toda la provincia de Buenos Aires
+              Disponible en toda la provincia de Entre Ríos
             </span>
           </div>
           <h1
