@@ -90,7 +90,7 @@ export default function Login() {
         >
           <Sparkles size={15} color="#93c5fd" />
           <span style={{ color: '#bfdbfe', fontSize: '0.8rem', fontWeight: 600 }}>
-            La plataforma de canchas #1 de Argentina
+            Plataforma de Reserva de Canchas 
           </span>
         </div>
       }
@@ -108,7 +108,7 @@ export default function Login() {
             {[
               'Disponibilidad en tiempo real',
               'Pago online con MercadoPago',
-              'Confirmación instantánea por WhatsApp',
+              'Cancelación gratuita hasta 1h antes',
             ].map((b) => (
               <li key={b} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <span
@@ -131,9 +131,7 @@ export default function Login() {
           </ul>
           <div style={{ display: 'flex', gap: 24 }}>
             {[
-              { v: '2.000+', l: 'jugadores' },
-              { v: '50+', l: 'complejos' },
-              { v: '30 s', l: 'para reservar' },
+              { v: '100% digital', l: 'Reservá y pagá online, sin llamadas ni esperas.' },
             ].map((s) => (
               <div key={s.l}>
                 <div
@@ -170,7 +168,7 @@ export default function Login() {
         Bienvenido de nuevo
       </h2>
       <p style={{ color: '#64748b', fontSize: '0.92rem', marginBottom: 28 }}>
-        Iniciá sesión para seguir reservando.
+        Iniciá sesión para Reservar.
       </p>
 
       {successMessage && (

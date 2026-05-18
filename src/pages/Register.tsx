@@ -96,7 +96,7 @@ export default function Register() {
 
   return (
     <AuthShell
-      hero="https://images.unsplash.com/photo-1626224583764-f87db24ac4ea?w=1400&q=85&fit=crop"
+      hero="https://swisspadel.ch/wp-content/uploads/2024/07/DSC01134-1-2048x1366.jpg"
       kicker={
         <div
           style={{
@@ -112,15 +112,15 @@ export default function Register() {
         >
           <Sparkles size={15} color="#93c5fd" />
           <span style={{ color: '#bfdbfe', fontSize: '0.8rem', fontWeight: 600 }}>
-            Más de 2.000 jugadores activos
+              Plataforma de Reserva de Canchas
           </span>
         </div>
       }
       title={
         <>
-          Unite a miles
+          Unite a 
           <br />
-          de jugadores.
+          TuCanchera
         </>
       }
       subtitle="Reservá canchas de fútbol 5, fútbol 7 y pádel en los mejores complejos cerca tuyo."
