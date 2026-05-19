@@ -7,7 +7,6 @@ import ProtectedRoute from '@/components/ProtectedRoute'
 import AdminLayout from '@/components/AdminLayout'
 import Login from '@/pages/Login'
 import Register from '@/pages/Register'
-import RegisterAdmin from '@/pages/RegisterAdmin'
 import ForgotPassword from '@/pages/ForgotPassword'
 import ResetPassword from '@/pages/ResetPassword'
 import AuthCallback from '@/pages/AuthCallback'
@@ -21,7 +20,10 @@ import GestionCanchas from '@/pages/admin/GestionCanchas'
 import Bloqueos from '@/pages/admin/Bloqueos'
 import ReservasAdmin from '@/pages/admin/Reservas'
 import Estadisticas from '@/pages/admin/Estadisticas'
+import ResumenesMensuales from '@/pages/admin/ResumenesMensuales'
+import InvitarAdmin from '@/pages/superadmin/InvitarAdmin'
 import { Toaster } from '@/components/ui/sonner'
+import CompletarPerfilModal, { useDeberiaCompletarPerfil } from '@/components/CompletarPerfilModal'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -48,6 +50,7 @@ function RootRedirect() {
   }
 
   if (!user) return <Navigate to="/login" replace />
+  if (rol === 'superadmin') return <Navigate to="/superadmin" replace />
   if (rol === 'admin') return <Navigate to="/admin/dashboard" replace />
   return <Navigate to="/explorar" replace />
 }
@@ -73,7 +76,7 @@ function App() {
             {/* Rutas públicas de autenticación */}
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
-            <Route path="/register-admin" element={<RegisterAdmin />} />
+            {/* /register-admin eliminado — los admins se crean por invitación */}
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/auth/callback" element={<AuthCallback />} />
@@ -86,6 +89,11 @@ function App() {
               <Route path="/mis-reservas" element={<MisReservas />} />
             </Route>
 
+            {/* Ruta superadmin */}
+            <Route element={<ProtectedRoute rol="superadmin" />}>
+              <Route path="/superadmin" element={<InvitarAdmin />} />
+            </Route>
+
             {/* Rutas admin */}
             <Route element={<ProtectedRoute rol="admin" />}>
               <Route path="/admin" element={<AdminLayout />}>
@@ -96,6 +104,7 @@ function App() {
                 <Route path="bloqueos" element={<Bloqueos />} />
                 <Route path="reservas" element={<ReservasAdmin />} />
                 <Route path="estadisticas" element={<Estadisticas />} />
+                <Route path="resumenes" element={<ResumenesMensuales />} />
               </Route>
             </Route>
 
@@ -106,10 +115,18 @@ function App() {
             </Route>
           </Routes>
           <Toaster />
+          <PerfilModalGlobal />
         </BrowserRouter>
       </AuthProvider>
     </QueryClientProvider>
   )
+}
+
+// Wrapper global que muestra el modal de perfil incompleto si aplica
+function PerfilModalGlobal() {
+  const mostrar = useDeberiaCompletarPerfil()
+  if (!mostrar) return null
+  return <CompletarPerfilModal />
 }
 
 export default App

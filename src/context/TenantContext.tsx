@@ -32,6 +32,7 @@ export function TenantProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!slug) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setLoading(false)
       setError('No se proporcionó un slug de complejo.')
       return
@@ -69,6 +70,7 @@ export function TenantProvider({ children }: { children: ReactNode }) {
 }
 
 // Hook para consumir el contexto del tenant de forma segura
+// eslint-disable-next-line react-refresh/only-export-components
 export function useTenant() {
   const context = useContext(TenantContext)
   if (context === undefined) {

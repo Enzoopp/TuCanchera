@@ -1,73 +1,97 @@
-# React + TypeScript + Vite
+# TuCanchera
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Plataforma SaaS multi-tenant para reservas de canchas deportivas (fútbol 5, fútbol 7, pádel). Cada complejo tiene su propio portal público (`/c/:slug`) donde los clientes reservan turnos en tiempo real.
 
-Currently, two official plugins are available:
+## Stack
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+| Capa | Tecnología |
+|---|---|
+| Frontend | React 18 + TypeScript + Vite |
+| Estilos | CSS-in-JS (inline) + Space Grotesk / DM Sans |
+| Routing | React Router v6 |
+| Auth | Supabase Auth (email/password + Google OAuth) |
+| Base de datos | Supabase (PostgreSQL) con RLS |
+| Storage | Supabase Storage (logos y fotos de complejos) |
+| Edge Functions | Supabase Edge Functions (Deno) — invite-admin |
+| Hosting | Vercel |
 
-## React Compiler
+## Roles
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- **cliente** — reserva turnos en complejos públicos
+- **admin** — gestiona su complejo (canchas, horarios, bloqueos, reservas, cierres mensuales)
+- **superadmin** — invita nuevos admins desde el panel `/superadmin`
 
-## Expanding the ESLint configuration
+## Setup local
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+```bash
+# 1. Instalar dependencias
+npm install
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+# 2. Copiar variables de entorno
+cp .env.example .env.local
+# Completar VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+# 3. Correr en modo desarrollo
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Variables de entorno
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+| Variable | Descripción | Obligatoria |
+|---|---|---|
+| `VITE_SUPABASE_URL` | URL del proyecto Supabase | ✅ |
+| `VITE_SUPABASE_ANON_KEY` | Anon key pública de Supabase | ✅ |
+| `VITE_MP_ENABLED` | Habilita botón MercadoPago (`true`/`false`) | ❌ (default `false`) |
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+## Supabase — setup
+
+1. Crear proyecto en [supabase.com](https://supabase.com)
+2. Ejecutar `supabase/schema.sql` en el SQL Editor (crea todas las tablas, triggers, RLS y storage)
+3. En Authentication → Providers: habilitar Google si se quiere OAuth
+4. Deployar la Edge Function `invite-admin`:
+
+```bash
+supabase functions deploy invite-admin --project-ref <TU_REF>
 ```
+
+La función requiere las variables de entorno `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY` y `APP_URL` en los secrets de la Edge Function.
+
+## Migraciones
+
+Las migraciones incrementales viven en `supabase/migrations/`. Aplicarlas en orden si se parte de un esquema existente:
+
+| Archivo | Descripción |
+|---|---|
+| `20240001_google_oauth_trigger.sql` | Soporte para perfiles creados via Google OAuth |
+| `20240002_fix_invited_at_trigger.sql` | Fix bug en alta de admins (invited_at correcto) |
+
+## Estructura de archivos relevante
+
+```
+src/
+├── components/        # Componentes reutilizables
+├── context/           # AuthContext, TenantContext
+├── pages/
+│   ├── admin/         # Panel admin (Dashboard, Canchas, Reservas, Estadísticas…)
+│   └── superadmin/    # Panel superadmin (invitar admins)
+├── services/          # Capa de acceso a Supabase (adminService, reservaService…)
+└── types/             # Tipos TypeScript alineados con schema.sql
+supabase/
+├── functions/
+│   └── invite-admin/  # Edge Function para invitar admins
+├── migrations/        # Migraciones incrementales
+└── schema.sql         # Schema completo (fuente de verdad)
+```
+
+## Scripts
+
+```bash
+npm run dev      # Servidor de desarrollo
+npm run build    # Build de producción
+npm run lint     # ESLint
+npm run preview  # Preview del build
+```
+
+## Pagos (pendiente)
+
+La integración con MercadoPago está diseñada pero no implementada. El botón de pago aparecerá en el modal de reserva cuando se setee `VITE_MP_ENABLED=true` y se implementen las Edge Functions correspondientes.

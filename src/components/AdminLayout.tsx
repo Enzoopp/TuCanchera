@@ -1,10 +1,13 @@
-// SRP: Layout común para páginas del admin con sidebar de navegación.
-// Incluye NavLink de react-router para resaltar el ítem activo.
+// SRP: Layout común para páginas del admin con sidebar blanco (diseño Claude).
+// Replica AdminLayout.jsx: sidebar sticky con logo, badge de complejo activo,
+// navegación con indicador vertical azul, footer con avatar + logout.
+// En mobile se transforma en drawer con overlay.
 
+import { useEffect, useState, type ComponentType } from 'react'
 import { NavLink, Outlet, Link, Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 import { useMiComplejo } from '@/hooks/useMiComplejo'
-import { Button } from '@/components/ui/button'
+import Logo from '@/components/brand/Logo'
 import {
   LayoutDashboard,
   Building2,
@@ -12,26 +15,60 @@ import {
   CalendarX,
   ClipboardList,
   BarChart3,
+  BookMarked,
   LogOut,
-  ExternalLink,
+  Menu,
+  X,
 } from 'lucide-react'
 
-const items = [
+interface NavItem {
+  to: string
+  label: string
+  icon: ComponentType<{ size?: number }>
+}
+
+const NAV_ITEMS: NavItem[] = [
   { to: '/admin/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { to: '/admin/complejo', label: 'Mi complejo', icon: Building2 },
+  { to: '/admin/complejo', label: 'Mi Complejo', icon: Building2 },
   { to: '/admin/canchas', label: 'Canchas', icon: LandPlot },
   { to: '/admin/bloqueos', label: 'Bloqueos', icon: CalendarX },
   { to: '/admin/reservas', label: 'Reservas', icon: ClipboardList },
   { to: '/admin/estadisticas', label: 'Estadísticas', icon: BarChart3 },
+  { to: '/admin/resumenes', label: 'Resúmenes', icon: BookMarked },
 ]
+
+function getInitials(nombre: string | null | undefined): string {
+  if (!nombre) return '?'
+  const parts = nombre.trim().split(/\s+/)
+  if (parts.length === 0) return '?'
+  if (parts.length === 1) return parts[0].charAt(0).toUpperCase()
+  return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase()
+}
 
 export default function AdminLayout() {
   const { profile, signOut } = useAuth()
   const { data: complejo, isLoading: loadingComplejo } = useMiComplejo()
   const location = useLocation()
 
-  // Onboarding: si el admin no tiene complejo, forzar a /admin/complejo
-  // donde se renderiza el wizard. Evita que vea dashboards vacíos.
+  const [isMobile, setIsMobile] = useState(
+    typeof window !== 'undefined' ? window.innerWidth < 900 : false
+  )
+  const [mobileOpen, setMobileOpen] = useState(false)
+
+  useEffect(() => {
+    function onResize() {
+      setIsMobile(window.innerWidth < 900)
+    }
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
+  // Close drawer on route change
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setMobileOpen(false)
+  }, [location.pathname])
+
   if (
     !loadingComplejo &&
     profile?.rol === 'admin' &&
@@ -41,102 +78,293 @@ export default function AdminLayout() {
     return <Navigate to="/admin/complejo" replace />
   }
 
+  const sidebarVisible = !isMobile || mobileOpen
+
   return (
-    <div className="min-h-screen bg-neutral-50">
-      <div className="flex min-h-screen">
-        {/* Sidebar desktop */}
-        <aside className="hidden w-64 shrink-0 border-r border-neutral-200 bg-white lg:flex lg:flex-col">
-          <div className="border-b border-neutral-200 p-5">
-            <p className="text-xs uppercase tracking-wide text-neutral-400">
-              Admin
-            </p>
-            <h1 className="mt-0.5 text-base font-semibold text-neutral-900">
-              {complejo?.nombre ?? 'TuCanchera'}
-            </h1>
-            {complejo?.slug && (
-              <Link
-                to={`/${complejo.slug}`}
-                target="_blank"
-                className="mt-1 inline-flex items-center gap-1 text-xs text-primary-600 hover:underline"
-              >
-                Ver página pública <ExternalLink className="h-3 w-3" />
-              </Link>
-            )}
+    <div
+      style={{
+        display: 'flex',
+        minHeight: '100vh',
+        background: '#f8fafc',
+        fontFamily: "'DM Sans', sans-serif",
+      }}
+    >
+      {/* Sidebar */}
+      {sidebarVisible && (
+        <aside
+          style={{
+            width: 240,
+            flexShrink: 0,
+            background: 'white',
+            borderRight: '1px solid #e2e8f0',
+            position: isMobile ? 'fixed' : 'sticky',
+            top: 0,
+            left: 0,
+            height: '100vh',
+            zIndex: 100,
+            display: 'flex',
+            flexDirection: 'column',
+            boxShadow: isMobile ? '4px 0 24px rgba(0,0,0,0.1)' : 'none',
+            animation: isMobile ? 'slideRight 0.25s ease' : 'none',
+          }}
+        >
+          {/* Top: logo + complex badge */}
+          <div style={{ padding: '22px 18px 18px', borderBottom: '1px solid #f1f5f9' }}>
+            <Link
+              to="/"
+              style={{
+                display: 'inline-block',
+                textDecoration: 'none',
+                marginBottom: 14,
+              }}
+            >
+              <Logo size="sm" />
+            </Link>
+            <div
+              style={{
+                background: 'linear-gradient(135deg, #dbeafe, #eff6ff)',
+                borderRadius: 10,
+                padding: '8px 12px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                border: '1px solid #bfdbfe',
+              }}
+            >
+              <div
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: 99,
+                  background: complejo ? '#22c55e' : '#94a3b8',
+                  boxShadow: complejo
+                    ? '0 0 0 3px rgba(34,197,94,0.2)'
+                    : '0 0 0 3px rgba(148,163,184,0.2)',
+                  flexShrink: 0,
+                }}
+              />
+              <div style={{ minWidth: 0 }}>
+                <div
+                  style={{
+                    fontSize: '0.7rem',
+                    color: '#3b82f6',
+                    fontWeight: 600,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.06em',
+                  }}
+                >
+                  Administrando
+                </div>
+                <div
+                  style={{
+                    fontSize: '0.82rem',
+                    fontWeight: 700,
+                    color: '#1e40af',
+                    fontFamily: "'Space Grotesk', sans-serif",
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                >
+                  {complejo?.nombre ?? 'Sin complejo'}
+                </div>
+              </div>
+            </div>
           </div>
 
-          <nav className="flex-1 p-3">
-            {items.map((item) => {
+          {/* Nav */}
+          <nav
+            style={{
+              flex: 1,
+              padding: '14px 12px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 2,
+              overflowY: 'auto',
+            }}
+          >
+            {NAV_ITEMS.map((item) => {
               const Icon = item.icon
               return (
                 <NavLink
                   key={item.to}
                   to={item.to}
-                  className={({ isActive }) =>
-                    `mb-1 flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors ${
-                      isActive
-                        ? 'bg-primary-50 text-primary-700 font-medium'
-                        : 'text-neutral-600 hover:bg-neutral-100'
-                    }`
-                  }
                   end
+                  style={({ isActive }) => ({
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    padding: '10px 14px',
+                    borderRadius: 10,
+                    background: isActive ? '#eff6ff' : 'transparent',
+                    color: isActive ? '#1d4ed8' : '#475569',
+                    textDecoration: 'none',
+                    fontSize: '0.88rem',
+                    fontWeight: isActive ? 700 : 600,
+                    fontFamily: "'DM Sans', sans-serif",
+                    transition: 'background 0.15s, color 0.15s',
+                    position: 'relative',
+                  })}
                 >
-                  <Icon className="h-4 w-4" />
-                  {item.label}
+                  {({ isActive }) => (
+                    <>
+                      <Icon size={18} />
+                      <span>{item.label}</span>
+                      {isActive && (
+                        <span
+                          style={{
+                            position: 'absolute',
+                            left: 0,
+                            top: 8,
+                            bottom: 8,
+                            width: 3,
+                            background: '#2563eb',
+                            borderRadius: '0 3px 3px 0',
+                          }}
+                        />
+                      )}
+                    </>
+                  )}
                 </NavLink>
               )
             })}
           </nav>
 
-          <div className="border-t border-neutral-200 p-3">
-            <p className="px-3 text-xs text-neutral-500">{profile?.nombre}</p>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="mt-1 w-full justify-start"
-              onClick={signOut}
+          {/* User footer */}
+          <div style={{ padding: 14, borderTop: '1px solid #f1f5f9' }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                padding: 10,
+                borderRadius: 10,
+                background: '#f8fafc',
+              }}
             >
-              <LogOut className="mr-2 h-4 w-4" /> Cerrar sesión
-            </Button>
+              <div
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 99,
+                  flexShrink: 0,
+                  background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: 'white',
+                  fontWeight: 700,
+                  fontSize: '0.82rem',
+                  fontFamily: "'Space Grotesk', sans-serif",
+                }}
+              >
+                {getInitials(profile?.nombre)}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div
+                  style={{
+                    fontSize: '0.82rem',
+                    fontWeight: 700,
+                    color: '#0f172a',
+                    lineHeight: 1.2,
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                >
+                  {profile?.nombre ?? '—'}
+                </div>
+                <div style={{ fontSize: '0.7rem', color: '#94a3b8', lineHeight: 1.2 }}>
+                  Admin
+                </div>
+              </div>
+              <button
+                onClick={signOut}
+                title="Cerrar sesión"
+                style={{
+                  width: 30,
+                  height: 30,
+                  borderRadius: 8,
+                  border: 'none',
+                  background: 'white',
+                  color: '#64748b',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'all 0.15s',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = '#fef2f2'
+                  e.currentTarget.style.color = '#dc2626'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'white'
+                  e.currentTarget.style.color = '#64748b'
+                }}
+              >
+                <LogOut size={15} />
+              </button>
+            </div>
           </div>
         </aside>
+      )}
 
-        {/* Contenido */}
-        <main className="flex-1">
-          {/* Topbar mobile */}
-          <header className="flex items-center justify-between border-b border-neutral-200 bg-white px-4 py-3 lg:hidden">
-            <h1 className="font-semibold text-neutral-900">
-              {complejo?.nombre ?? 'Admin'}
-            </h1>
-            <Button variant="ghost" size="sm" onClick={signOut}>
-              <LogOut className="h-4 w-4" />
-            </Button>
-          </header>
+      {/* Mobile overlay */}
+      {isMobile && mobileOpen && (
+        <div
+          onClick={() => setMobileOpen(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15,23,42,0.4)',
+            zIndex: 99,
+            animation: 'fadeIn 0.2s ease',
+          }}
+        />
+      )}
 
-          {/* Tabs mobile */}
-          <nav className="flex gap-1 overflow-x-auto border-b border-neutral-200 bg-white px-2 py-2 lg:hidden">
-            {items.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                className={({ isActive }) =>
-                  `whitespace-nowrap rounded-md px-3 py-1.5 text-xs ${
-                    isActive
-                      ? 'bg-primary-50 text-primary-700 font-medium'
-                      : 'text-neutral-600'
-                  }`
-                }
-                end
+      {/* Content */}
+      <main style={{ flex: 1, minWidth: 0 }}>
+        {/* Mobile topbar */}
+        {isMobile && (
+          <div
+            style={{
+              position: 'sticky',
+              top: 0,
+              zIndex: 50,
+              background: 'white',
+              borderBottom: '1px solid #e2e8f0',
+              padding: '12px 16px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 12,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <button
+                onClick={() => setMobileOpen(!mobileOpen)}
+                aria-label="Abrir menú"
+                style={{
+                  background: '#f1f5f9',
+                  border: 'none',
+                  borderRadius: 8,
+                  padding: 8,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
               >
-                {item.label}
-              </NavLink>
-            ))}
-          </nav>
-
-          <div className="mx-auto max-w-6xl p-4 sm:p-6 lg:p-8">
-            <Outlet />
+                {mobileOpen ? <X size={20} color="#374151" /> : <Menu size={20} color="#374151" />}
+              </button>
+              <Logo size="sm" />
+            </div>
           </div>
-        </main>
-      </div>
+        )}
+        <Outlet />
+      </main>
     </div>
   )
 }
