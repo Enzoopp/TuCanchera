@@ -15,7 +15,8 @@ import { useSlots } from '@/hooks/useSlots'
 import { crearBloqueo, eliminarBloqueo } from '@/services/adminService'
 import { formatearFechaISO } from '@/utils/fechas'
 import SportIcon, { sportLabel } from '@/components/brand/SportIcon'
-import { Calendar, ChevronDown, Search, Ban, Check, X } from 'lucide-react'
+import { Calendar, ChevronDown, Search, Ban, Check, X, LayoutGrid, CalendarDays } from 'lucide-react'
+import { addDays, startOfWeek } from 'date-fns'
 import type { Slot } from '@/types'
 
 // ---------- Helpers ----------
@@ -48,8 +49,10 @@ export default function Bloqueos() {
   const [hoveredHour, setHoveredHour] = useState<string | null>(null)
   const [reservedTooltip, setReservedTooltip] = useState<string | null>(null)
   const [modalSlot, setModalSlot] = useState<Slot | null>(null)
+  const [modalFecha, setModalFecha] = useState<string | null>(null)
   const [confirmUnblock, setConfirmUnblock] = useState<{ slot: Slot; bloqueoId: string } | null>(null)
   const [toast, setToast] = useState<string | null>(null)
+  const [vista, setVista] = useState<'dia' | 'semana'>('dia')
 
   // Seleccionar primera cancha por defecto
   useEffect(() => {
@@ -83,18 +86,37 @@ export default function Bloqueos() {
     await queryClient.invalidateQueries({ queryKey: ['bloqueos', canchaId, fecha] })
   }
 
-  async function handleBlock(motivo: string) {
+  async function handleBlock(motivo: string, semanas: number) {
     if (!modalSlot || !canchaId) return
+    const fechaBloqueo = modalFecha || fecha
     try {
-      await crearBloqueo({
-        canchaId,
-        fecha,
-        horaInicio: modalSlot.horaInicio,
-        motivo: motivo.trim() || null,
+      // Crear bloqueo para la fecha seleccionada + N-1 semanas siguientes
+      const promises = Array.from({ length: semanas }, (_, i) => {
+        const d = new Date(fechaBloqueo + 'T12:00:00')
+        d.setDate(d.getDate() + i * 7)
+        const fechaISO = d.toISOString().slice(0, 10)
+        return crearBloqueo({
+          canchaId,
+          fecha: fechaISO,
+          horaInicio: modalSlot.horaInicio,
+          motivo: motivo.trim() || null,
+        })
       })
+      await Promise.all(promises)
+      // Invalida queries para todas las fechas afectadas
       await invalidar()
+      // En vista semanal, también invalida los días de la semana
+      if (vista === 'semana') {
+        const weekStart = startOfWeek(new Date(fecha + 'T12:00:00'), { weekStartsOn: 1 })
+        for (let d = 0; d < 7; d++) {
+          const fd = addDays(weekStart, d).toISOString().slice(0, 10)
+          await queryClient.invalidateQueries({ queryKey: ['slots', canchaId, fd] })
+          await queryClient.invalidateQueries({ queryKey: ['bloqueos', canchaId, fd] })
+        }
+      }
       setModalSlot(null)
-      showToast('Turno bloqueado')
+      setModalFecha(null)
+      showToast(semanas > 1 ? `${semanas} turnos bloqueados` : 'Turno bloqueado')
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Error al bloquear')
     }
@@ -276,27 +298,59 @@ export default function Bloqueos() {
             />
           </div>
         </div>
-        <button
-          onClick={() => invalidar()}
-          style={{
-            padding: '11px 18px',
-            borderRadius: 12,
-            border: 'none',
-            background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
-            color: 'white',
-            fontFamily: "'DM Sans', sans-serif",
-            fontWeight: 700,
-            fontSize: '0.9rem',
-            cursor: 'pointer',
-            boxShadow: '0 4px 12px rgba(37,99,235,0.25)',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 8,
-          }}
-        >
-          <Search size={15} />
-          Ver turnos
-        </button>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <button
+            onClick={() => invalidar()}
+            style={{
+              padding: '11px 18px',
+              borderRadius: 12,
+              border: 'none',
+              background: 'linear-gradient(135deg, #2563eb, #1d4ed8)',
+              color: 'white',
+              fontFamily: "'DM Sans', sans-serif",
+              fontWeight: 700,
+              fontSize: '0.9rem',
+              cursor: 'pointer',
+              boxShadow: '0 4px 12px rgba(37,99,235,0.25)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+            }}
+          >
+            <Search size={15} />
+            Ver turnos
+          </button>
+          {/* Toggle Día / Semana */}
+          <div style={{ display: 'flex', gap: 4 }}>
+            {(['dia', 'semana'] as const).map((v) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setVista(v)}
+                style={{
+                  flex: 1,
+                  padding: '7px 0',
+                  borderRadius: 8,
+                  border: `1.5px solid ${vista === v ? '#2563eb' : '#e2e8f0'}`,
+                  background: vista === v ? '#eff6ff' : 'white',
+                  color: vista === v ? '#1d4ed8' : '#64748b',
+                  fontFamily: "'DM Sans', sans-serif",
+                  fontSize: '0.75rem',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 4,
+                  transition: 'all 0.15s',
+                }}
+              >
+                {v === 'dia' ? <LayoutGrid size={12} /> : <CalendarDays size={12} />}
+                {v === 'dia' ? 'Día' : 'Semana'}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* Body */}
@@ -308,7 +362,7 @@ export default function Bloqueos() {
           gap: 24,
         }}
       >
-        {/* Slot grid */}
+        {/* Slot grid — vista diaria o semanal */}
         <div
           style={{
             background: 'white',
@@ -318,6 +372,18 @@ export default function Bloqueos() {
             boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
           }}
         >
+          {vista === 'semana' && canchaId && canchaSel ? (
+            <WeeklyAdminGrid
+              fecha={fecha}
+              canchaId={canchaId}
+              duracionMin={canchaSel.duracion_min}
+              onSlotClick={(f, slot) => {
+                setModalFecha(f)
+                setModalSlot(slot)
+              }}
+            />
+          ) : (
+          <>
           <div
             style={{
               display: 'flex',
@@ -456,7 +522,7 @@ export default function Bloqueos() {
 
                     {hovered && isFree && (
                       <button
-                        onClick={() => setModalSlot(slot)}
+                        onClick={() => { setModalFecha(fecha); setModalSlot(slot) }}
                         style={{
                           position: 'absolute',
                           inset: 0,
@@ -527,6 +593,8 @@ export default function Bloqueos() {
                 )
               })}
             </div>
+          )}
+          </>
           )}
         </div>
 
@@ -638,7 +706,8 @@ export default function Bloqueos() {
         <BlockModal
           slot={modalSlot}
           courtName={canchaSel.nombre}
-          onClose={() => setModalSlot(null)}
+          fecha={modalFecha || fecha}
+          onClose={() => { setModalSlot(null); setModalFecha(null) }}
           onConfirm={handleBlock}
         />
       )}
@@ -830,16 +899,22 @@ function Donut({
 function BlockModal({
   slot,
   courtName,
+  fecha,
   onClose,
   onConfirm,
 }: {
   slot: Slot
   courtName: string
+  fecha: string
   onClose: () => void
-  onConfirm: (motivo: string) => void
+  onConfirm: (motivo: string, semanas: number) => void
 }) {
   const [reason, setReason] = useState('')
+  const [semanas, setSemanas] = useState(1)
   const suggestions = ['Mantenimiento', 'Evento privado', 'Limpieza', 'Otro']
+
+  // Día de la semana del bloqueo
+  const diaNombre = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'][new Date(fecha + 'T12:00:00').getDay()]
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -996,7 +1071,57 @@ function BlockModal({
           }}
         />
 
-        <div style={{ display: 'flex', gap: 10, marginTop: 22 }}>
+        {/* Repetición semanal */}
+        <div
+          style={{
+            marginTop: 18,
+            padding: '14px 16px',
+            borderRadius: 12,
+            background: '#f8fafc',
+            border: '1px solid #e2e8f0',
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 12,
+            }}
+          >
+            <div>
+              <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#0f172a', marginBottom: 2 }}>
+                Repetir semanalmente
+              </div>
+              <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                Bloqueará este turno ({diaNombre}) las próximas semanas
+              </div>
+            </div>
+            <select
+              value={semanas}
+              onChange={(e) => setSemanas(Number(e.target.value))}
+              style={{
+                padding: '7px 10px',
+                borderRadius: 8,
+                border: '1.5px solid #e2e8f0',
+                fontFamily: "'DM Sans', sans-serif",
+                fontSize: '0.85rem',
+                fontWeight: 700,
+                background: 'white',
+                color: '#0f172a',
+                cursor: 'pointer',
+                flexShrink: 0,
+              }}
+            >
+              <option value={1}>Solo esta</option>
+              {[2, 3, 4, 6, 8].map((n) => (
+                <option key={n} value={n}>{n} semanas</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
           <button
             onClick={onClose}
             style={{
@@ -1014,7 +1139,7 @@ function BlockModal({
             Cancelar
           </button>
           <button
-            onClick={() => onConfirm(reason)}
+            onClick={() => onConfirm(reason, semanas)}
             style={{
               flex: 1,
               padding: '11px 18px',
@@ -1035,7 +1160,7 @@ function BlockModal({
             onMouseEnter={(e) => (e.currentTarget.style.background = '#b91c1c')}
             onMouseLeave={(e) => (e.currentTarget.style.background = '#dc2626')}
           >
-            <Ban size={15} /> Confirmar bloqueo
+            <Ban size={15} /> {semanas > 1 ? `Bloquear ${semanas}×` : 'Confirmar bloqueo'}
           </button>
         </div>
       </div>

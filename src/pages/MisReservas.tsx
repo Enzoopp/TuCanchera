@@ -4,12 +4,12 @@
 
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/context/AuthContext'
-import { fetchMisReservas } from '@/services/reservaService'
+import { fetchMisReservas, cancelarReservaCliente } from '@/services/reservaService'
 import Navbar from '@/components/brand/Navbar'
 import SportIcon, { sportLabel, sportPalette } from '@/components/brand/SportIcon'
-import { Calendar, Clock, Search } from 'lucide-react'
+import { Calendar, Clock, Search, X } from 'lucide-react'
 import { parseISO, isBefore, startOfDay } from 'date-fns'
 import type { EstadoReserva, Reserva, TipoCancha } from '@/types'
 
@@ -27,7 +27,8 @@ const STATUS_CONFIG: Record<
 > = {
   confirmada: { color: '#2563eb', bg: '#eff6ff', text: '#1d4ed8', label: 'Confirmada' },
   pendiente_pago: { color: '#f59e0b', bg: '#fefce8', text: '#a16207', label: 'Pendiente de pago' },
-  cancelada_admin: { color: '#dc2626', bg: '#fef2f2', text: '#dc2626', label: 'Cancelada' },
+  cancelada_admin: { color: '#dc2626', bg: '#fef2f2', text: '#dc2626', label: 'Cancelada por admin' },
+  cancelada_cliente: { color: '#dc2626', bg: '#fef2f2', text: '#dc2626', label: 'Cancelada' },
   pasada: { color: '#94a3b8', bg: '#f1f5f9', text: '#475569', label: 'Pasada' },
 }
 
@@ -62,7 +63,7 @@ export default function MisReservas() {
       const d = parseISO(r.fecha)
       const isPast = isBefore(d, today)
       // Cancelada o pasada → historial
-      if (r.estado === 'cancelada_admin' || isPast) past.push(r)
+      if (r.estado === 'cancelada_admin' || r.estado === 'cancelada_cliente' || isPast) past.push(r)
       else up.push(r)
     }
     return { proximas: up, historial: past }
@@ -258,7 +259,7 @@ export default function MisReservas() {
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             {active.map((r) => (
-              <ReservationCard key={r.id} r={r} past={isHistorialView} />
+              <ReservationCard key={r.id} r={r} past={isHistorialView} profileId={profile?.id} />
             ))}
           </div>
         )}
@@ -269,12 +270,59 @@ export default function MisReservas() {
 
 /* ─────────────────────────────────────────────────────────────────────────── */
 
-function ReservationCard({ r, past }: { r: ReservaConJoins; past: boolean }) {
+function ReservationCard({
+  r,
+  past,
+  profileId,
+}: {
+  r: ReservaConJoins
+  past: boolean
+  profileId?: string
+}) {
+  const queryClient = useQueryClient()
   const [hovered, setHovered] = useState(false)
+  const [cancelling, setCancelling] = useState(false)
+  const [cancelError, setCancelError] = useState<string | null>(null)
+  const [confirmCancel, setConfirmCancel] = useState(false)
+
   // Estado efectivo: si es pasada y estaba confirmada/pendiente → mostrar como "pasada"
+  const isCancelled = r.estado === 'cancelada_admin' || r.estado === 'cancelada_cliente'
   const effectiveStatus: keyof typeof STATUS_CONFIG =
-    past && r.estado !== 'cancelada_admin' ? 'pasada' : r.estado
+    past && !isCancelled ? 'pasada' : r.estado
   const cfg = STATUS_CONFIG[effectiveStatus]
+
+  // Mostrar botón cancelar solo si: no es pasado, no cancelado, es confirmada o pendiente
+  const canCancel =
+    !past &&
+    !isCancelled &&
+    (r.estado === 'confirmada' || r.estado === 'pendiente_pago')
+
+  async function handleCancel() {
+    if (!confirmCancel) {
+      setConfirmCancel(true)
+      return
+    }
+    setCancelling(true)
+    setCancelError(null)
+    try {
+      const result = await cancelarReservaCliente(r.id)
+      if (result.ok) {
+        queryClient.invalidateQueries({ queryKey: ['mis-reservas', profileId] })
+      } else if (result.code === 'TOO_LATE') {
+        const h = Math.ceil(result.horas_restantes)
+        setCancelError(`No se puede cancelar: faltan menos de 24 hs (${h}h restantes).`)
+        setConfirmCancel(false)
+      } else {
+        setCancelError('No se pudo cancelar. Intentá de nuevo.')
+        setConfirmCancel(false)
+      }
+    } catch {
+      setCancelError('Error de conexión. Intentá de nuevo.')
+      setConfirmCancel(false)
+    } finally {
+      setCancelling(false)
+    }
+  }
 
   const tipo = (r.canchas?.tipo || 'futbol5') as TipoCancha
   const sport = sportLabel(tipo)
@@ -486,8 +534,52 @@ function ReservationCard({ r, past }: { r: ReservaConJoins; past: boolean }) {
                 Ver complejo →
               </Link>
             )}
+            {canCancel && (
+              <button
+                type="button"
+                onClick={handleCancel}
+                disabled={cancelling}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  padding: '6px 12px',
+                  borderRadius: 8,
+                  border: confirmCancel ? '1.5px solid #dc2626' : '1.5px solid #e2e8f0',
+                  background: confirmCancel ? '#fef2f2' : 'white',
+                  color: confirmCancel ? '#dc2626' : '#64748b',
+                  fontSize: '0.78rem',
+                  fontWeight: 700,
+                  cursor: cancelling ? 'not-allowed' : 'pointer',
+                  fontFamily: "'DM Sans', sans-serif",
+                  opacity: cancelling ? 0.6 : 1,
+                  transition: 'all 0.15s',
+                }}
+              >
+                <X size={13} />
+                {cancelling ? 'Cancelando…' : confirmCancel ? '¿Confirmar cancelación?' : 'Cancelar'}
+              </button>
+            )}
           </div>
         </div>
+
+        {/* Error de cancelación */}
+        {cancelError && (
+          <div
+            style={{
+              margin: '0 0 12px',
+              padding: '8px 14px',
+              borderRadius: 8,
+              background: '#fef2f2',
+              border: '1px solid #fecaca',
+              color: '#dc2626',
+              fontSize: '0.8rem',
+              fontWeight: 600,
+            }}
+          >
+            {cancelError}
+          </div>
+        )}
       </div>
 
       <style>{`

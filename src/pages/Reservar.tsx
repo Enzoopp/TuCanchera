@@ -9,13 +9,14 @@ import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/context/AuthContext'
 import { useTenant } from '@/context/TenantContext'
 import { useSlots } from '@/hooks/useSlots'
+import { useDocumentMeta } from '@/hooks/useDocumentMeta'
 import { fetchCanchaById } from '@/services/reservaService'
 import Navbar from '@/components/brand/Navbar'
 import SportIcon, { sportPalette, sportLabel } from '@/components/brand/SportIcon'
 import ConfirmacionReservaModal from '@/components/ConfirmacionReservaModal'
 import { Home, ChevronRight, ChevronLeft, Clock } from 'lucide-react'
 import { addDays, startOfWeek, isSameDay, differenceInCalendarDays, startOfDay } from 'date-fns'
-import type { Slot } from '@/types'
+import type { FranjaPrecio, Slot } from '@/types'
 
 const DAY_LABELS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
 const MONTH_NAMES = [
@@ -82,6 +83,16 @@ export default function Reservar() {
     }
     setSelected({ fecha, slot })
   }
+
+  useDocumentMeta({
+    title: cancha && complejo
+      ? `Reservar ${cancha.nombre} en ${complejo.nombre} | TuCanchera`
+      : 'Reservar cancha | TuCanchera',
+    description: cancha && complejo
+      ? `Elegí un horario para ${cancha.nombre} en ${complejo.nombre}. Reserva online sin llamadas.`
+      : 'Reservá tu cancha de fútbol o pádel online.',
+    canonical: window.location.href,
+  })
 
   if (loadingCancha) return <ReservarSkeleton />
 
@@ -386,6 +397,8 @@ export default function Reservar() {
             weekDates={weekDates}
             canchaId={cancha.id}
             duracionMin={cancha.duracion_min}
+            precioBase={cancha.precio}
+            franjas={cancha.franjas_precio}
             onSlotClick={handleSlotClick}
           />
         </div>
@@ -406,6 +419,8 @@ export default function Reservar() {
             dayLabel={DAY_LABELS[mobileDay]}
             canchaId={cancha.id}
             duracionMin={cancha.duracion_min}
+            precioBase={cancha.precio}
+            franjas={cancha.franjas_precio}
             onSlotClick={handleSlotClick}
           />
         </div>
@@ -455,23 +470,27 @@ function WeekGrid({
   weekDates,
   canchaId,
   duracionMin,
+  precioBase,
+  franjas,
   onSlotClick,
 }: {
   weekDates: Date[]
   canchaId: string
   duracionMin: number
+  precioBase?: number
+  franjas?: FranjaPrecio[] | null
   onSlotClick: (fecha: string, slot: Slot) => void
 }) {
   // Unimos los slots de cada día. Usamos 7 queries separadas (longitud estable).
   const dayStrings = weekDates.map(formatYMD)
   // Hook calls unrolled para cumplir las rules-of-hooks (longitud estable = 7).
-  const q0 = useSlots({ canchaId, fecha: dayStrings[0], duracionMin })
-  const q1 = useSlots({ canchaId, fecha: dayStrings[1], duracionMin })
-  const q2 = useSlots({ canchaId, fecha: dayStrings[2], duracionMin })
-  const q3 = useSlots({ canchaId, fecha: dayStrings[3], duracionMin })
-  const q4 = useSlots({ canchaId, fecha: dayStrings[4], duracionMin })
-  const q5 = useSlots({ canchaId, fecha: dayStrings[5], duracionMin })
-  const q6 = useSlots({ canchaId, fecha: dayStrings[6], duracionMin })
+  const q0 = useSlots({ canchaId, fecha: dayStrings[0], duracionMin, precioBase, franjas })
+  const q1 = useSlots({ canchaId, fecha: dayStrings[1], duracionMin, precioBase, franjas })
+  const q2 = useSlots({ canchaId, fecha: dayStrings[2], duracionMin, precioBase, franjas })
+  const q3 = useSlots({ canchaId, fecha: dayStrings[3], duracionMin, precioBase, franjas })
+  const q4 = useSlots({ canchaId, fecha: dayStrings[4], duracionMin, precioBase, franjas })
+  const q5 = useSlots({ canchaId, fecha: dayStrings[5], duracionMin, precioBase, franjas })
+  const q6 = useSlots({ canchaId, fecha: dayStrings[6], duracionMin, precioBase, franjas })
   const dayQueries = [q0, q1, q2, q3, q4, q5, q6]
 
   // Recolectamos todas las horas únicas de toda la semana (por si los horarios
@@ -572,6 +591,7 @@ function WeekGrid({
                 key={`${fecha}-${h}`}
                 state={effectiveState as Slot['estado'] | undefined}
                 hour={h.slice(0, 5)}
+                precio={slot?.precio}
                 onClick={() =>
                   effectiveSlot && onSlotClick(fecha, effectiveSlot)
                 }
@@ -592,12 +612,16 @@ function MobileDayGrid({
   dayLabel,
   canchaId,
   duracionMin,
+  precioBase,
+  franjas,
   onSlotClick,
 }: {
   date: Date
   dayLabel: string
   canchaId: string
   duracionMin: number
+  precioBase?: number
+  franjas?: FranjaPrecio[] | null
   onSlotClick: (fecha: string, slot: Slot) => void
 }) {
   const fechaISO = formatYMD(date)
@@ -609,6 +633,8 @@ function MobileDayGrid({
     canchaId,
     fecha: fechaISO,
     duracionMin,
+    precioBase,
+    franjas,
   })
 
   return (
@@ -687,6 +713,7 @@ function MobileDayGrid({
                 <SlotPill
                   state={effective.estado}
                   hour={s.horaInicio.slice(0, 5)}
+                  precio={s.precio}
                   large
                   onClick={() => onSlotClick(fechaISO, effective)}
                 />
@@ -705,11 +732,13 @@ function MobileDayGrid({
 function SlotPill({
   state,
   hour,
+  precio,
   onClick,
   large = false,
 }: {
   state: Slot['estado'] | undefined
   hour: string
+  precio?: number
   onClick: () => void
   large?: boolean
 }) {
@@ -742,6 +771,11 @@ function SlotPill({
         : { bg: '#f1f5f9', text: '#94a3b8', hoverBg: '#f1f5f9', hoverText: '#94a3b8', label: '—' }
   const clickable = state === 'libre'
 
+  // Etiqueta del precio (solo en slots libres cuando hay precio diferenciado)
+  const precioLabel = clickable && precio != null
+    ? `$${precio.toLocaleString('es-AR')}`
+    : null
+
   return (
     <button
       type="button"
@@ -751,22 +785,38 @@ function SlotPill({
       onMouseLeave={() => setHovered(false)}
       style={{
         width: '100%',
-        padding: large ? '14px 12px' : '9px 8px',
+        padding: large ? '12px 10px' : '7px 8px',
         borderRadius: 10,
         border: 'none',
         background: hovered && clickable ? cfg.hoverBg : cfg.bg,
         color: hovered && clickable ? cfg.hoverText : cfg.text,
         fontFamily: "'DM Sans', sans-serif",
-        fontSize: large ? '0.95rem' : '0.82rem',
+        fontSize: large ? '0.92rem' : '0.78rem',
         fontWeight: 700,
         cursor: clickable ? 'pointer' : 'not-allowed',
         transition: 'all 0.15s ease',
         letterSpacing: '-0.01em',
         boxShadow: hovered && clickable ? '0 4px 12px rgba(22,163,74,0.35)' : 'none',
         transform: hovered && clickable ? 'translateY(-1px)' : 'none',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: 2,
       }}
     >
-      {hovered && clickable ? 'Reservar' : cfg.label}
+      <span>{hovered && clickable ? 'Reservar' : cfg.label}</span>
+      {!hovered && precioLabel && (
+        <span
+          style={{
+            fontSize: large ? '0.72rem' : '0.65rem',
+            fontWeight: 600,
+            opacity: 0.75,
+            letterSpacing: 0,
+          }}
+        >
+          {precioLabel}
+        </span>
+      )}
     </button>
   )
 }

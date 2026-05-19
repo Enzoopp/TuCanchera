@@ -78,3 +78,17 @@ export async function fetchMisReservas(clienteId: string): Promise<
   if (error) throw error
   return data as never
 }
+
+// Tipos de respuesta para cancelación
+export type CancelResult =
+  | { ok: true; code: 'CANCELLED' }
+  | { ok: false; code: 'NOT_FOUND' | 'UNAUTHORIZED' | 'WRONG_STATUS' }
+  | { ok: false; code: 'TOO_LATE'; horas_restantes: number }
+
+export async function cancelarReservaCliente(reservaId: string): Promise<CancelResult> {
+  const { data, error } = await supabase.rpc('cancelar_reserva_cliente', {
+    p_reserva_id: reservaId,
+  })
+  if (error) throw error
+  return data as CancelResult
+}

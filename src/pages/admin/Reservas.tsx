@@ -31,6 +31,7 @@ import {
   Phone,
   AlertTriangle,
   DollarSign,
+  Download,
 } from 'lucide-react'
 import type { TipoCancha } from '@/types'
 
@@ -139,6 +140,64 @@ export default function Reservas() {
     setPage(1)
   }
 
+  function exportarCSV() {
+    const ESTADO_LABEL: Record<string, string> = {
+      confirmada: 'Confirmada',
+      pendiente_pago: 'Pendiente de pago',
+      cancelada_admin: 'Cancelada por admin',
+      cancelada_cliente: 'Cancelada por cliente',
+    }
+    const METODO_LABEL: Record<string, string> = {
+      en_lugar: 'En el lugar',
+      mercadopago: 'MercadoPago',
+    }
+
+    const headers = [
+      'Fecha',
+      'Hora inicio',
+      'Hora fin',
+      'Cancha',
+      'Cliente',
+      'Teléfono',
+      'Método de pago',
+      'Estado',
+      'Asistió',
+      'Precio',
+    ]
+
+    const rows = reservas.map((r) => [
+      r.fecha,
+      r.hora_inicio?.slice(0, 5) ?? '',
+      r.hora_fin?.slice(0, 5) ?? '',
+      r.canchas?.nombre ?? '',
+      r.profiles?.nombre ?? '',
+      r.profiles?.telefono ?? '',
+      METODO_LABEL[r.metodo_pago] ?? r.metodo_pago,
+      ESTADO_LABEL[r.estado] ?? r.estado,
+      r.asistio === true ? 'Sí' : r.asistio === false ? 'No' : '',
+      r.canchas?.precio != null ? String(r.canchas.precio) : '',
+    ])
+
+    const csvContent =
+      '﻿' + // BOM para que Excel reconozca UTF-8
+      [headers, ...rows]
+        .map((row) =>
+          row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(',')
+        )
+        .join('\r\n')
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    const today = new Date().toISOString().slice(0, 10)
+    link.setAttribute('href', url)
+    link.setAttribute('download', `reservas-${complejo?.slug ?? 'complejo'}-${today}.csv`)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  }
+
   async function handleAsistencia(id: string, valor: boolean) {
     try {
       await registrarAsistencia(id, valor)
@@ -175,29 +234,54 @@ export default function Reservas() {
       }}
     >
       {/* Header */}
-      <div style={{ marginBottom: 24 }}>
-        <h1
+      <div style={{ marginBottom: 24, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+        <div>
+          <h1
+            style={{
+              fontFamily: "'Space Grotesk', sans-serif",
+              fontSize: '1.9rem',
+              fontWeight: 800,
+              color: '#0f172a',
+              letterSpacing: '-0.03em',
+              margin: '0 0 6px',
+            }}
+          >
+            Reservas
+          </h1>
+          <p style={{ color: '#64748b', fontSize: '0.92rem', margin: 0 }}>
+            <strong style={{ color: '#0f172a' }}>
+              {reservas.length} reserva{reservas.length !== 1 ? 's' : ''}
+            </strong>
+            {' '}·{' '}
+            <strong style={{ color: '#16a34a' }}>
+              ${totalIngresos.toLocaleString('es-AR')}
+            </strong>{' '}
+            recaudado{totalIngresos !== 1 ? 's' : ''}
+          </p>
+        </div>
+        <button
+          onClick={exportarCSV}
+          disabled={reservas.length === 0}
           style={{
-            fontFamily: "'Space Grotesk', sans-serif",
-            fontSize: '1.9rem',
-            fontWeight: 800,
-            color: '#0f172a',
-            letterSpacing: '-0.03em',
-            margin: '0 0 6px',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 7,
+            padding: '10px 16px',
+            borderRadius: 10,
+            border: '1.5px solid #e2e8f0',
+            background: 'white',
+            color: reservas.length === 0 ? '#cbd5e1' : '#0f172a',
+            fontFamily: "'DM Sans', sans-serif",
+            fontSize: '0.85rem',
+            fontWeight: 700,
+            cursor: reservas.length === 0 ? 'not-allowed' : 'pointer',
+            boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
+            transition: 'all 0.15s',
           }}
         >
-          Reservas
-        </h1>
-        <p style={{ color: '#64748b', fontSize: '0.92rem', margin: 0 }}>
-          <strong style={{ color: '#0f172a' }}>
-            {reservas.length} reserva{reservas.length !== 1 ? 's' : ''}
-          </strong>
-          {' '}·{' '}
-          <strong style={{ color: '#16a34a' }}>
-            ${totalIngresos.toLocaleString('es-AR')}
-          </strong>{' '}
-          recaudado{totalIngresos !== 1 ? 's' : ''}
-        </p>
+          <Download size={15} />
+          Exportar CSV
+        </button>
       </div>
 
       {/* Filters */}
@@ -240,7 +324,8 @@ export default function Reservas() {
           <option value="">Todos los estados</option>
           <option value="confirmada">Confirmada</option>
           <option value="pendiente_pago">Pendiente</option>
-          <option value="cancelada_admin">Cancelada</option>
+          <option value="cancelada_admin">Cancelada (admin)</option>
+          <option value="cancelada_cliente">Cancelada (cliente)</option>
         </FilterSelect>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>

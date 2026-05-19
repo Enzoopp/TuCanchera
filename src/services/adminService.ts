@@ -200,7 +200,7 @@ export async function crearCancha(params: CrearCanchaParams): Promise<Cancha> {
 
 export async function updateCancha(
   id: string,
-  patch: Partial<Pick<Cancha, 'nombre' | 'precio' | 'duracion_min' | 'activa'>>
+  patch: Partial<Pick<Cancha, 'nombre' | 'precio' | 'duracion_min' | 'activa' | 'franjas_precio'>>
 ): Promise<Cancha> {
   const { data, error } = await supabase
     .from('canchas')

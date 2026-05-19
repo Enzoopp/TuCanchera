@@ -21,7 +21,7 @@ import {
 } from '@/services/adminService'
 import SportIcon, { sportPalette, sportLabel } from '@/components/brand/SportIcon'
 import { Clock, Pencil, Plus, Trash2, X, Check } from 'lucide-react'
-import type { Cancha, HorarioCancha, TipoCancha } from '@/types'
+import type { Cancha, FranjaPrecio, HorarioCancha, TipoCancha } from '@/types'
 
 // ---------- Constantes ----------
 
@@ -51,6 +51,7 @@ interface FormState {
   duracion_min: 60 | 90
   activa: boolean
   schedule: Schedule
+  franjas: FranjaPrecio[]
 }
 
 // ---------- Helpers ----------
@@ -167,6 +168,7 @@ export default function GestionCanchas() {
           precio: form.precio,
           duracion_min: form.duracion_min,
           activa: form.activa,
+          franjas_precio: form.franjas.length > 0 ? form.franjas : null,
         })
         await replaceHorarios(form.id, horariosToDB(form.schedule))
         await queryClient.invalidateQueries({ queryKey: ['horarios', form.id] })
@@ -713,6 +715,7 @@ function CourtDrawer({
           duracion_min: cancha.duracion_min,
           activa: cancha.activa,
           schedule: defaultSchedule(),
+          franjas: cancha.franjas_precio ?? [],
         }
       : {
           tipo: 'futbol5',
@@ -721,6 +724,7 @@ function CourtDrawer({
           duracion_min: 60,
           activa: true,
           schedule: defaultSchedule(),
+          franjas: [],
         }
   )
 
@@ -1144,6 +1148,13 @@ function CourtDrawer({
             </div>
           </div>
 
+          {/* Franjas de precio por horario */}
+          <FranjasPrecioEditor
+            franjas={form.franjas}
+            precioBase={form.precio}
+            onChange={(franjas) => setForm((f) => ({ ...f, franjas }))}
+          />
+
           {/* Activa toggle (solo en editar) */}
           {editing && (
             <div
@@ -1402,6 +1413,182 @@ function ConfirmDeleteModal({
       </div>
     </>,
     document.body
+  )
+}
+
+// ---------- Franjas de precio ----------
+
+function FranjasPrecioEditor({
+  franjas,
+  precioBase,
+  onChange,
+}: {
+  franjas: FranjaPrecio[]
+  precioBase: number
+  onChange: (franjas: FranjaPrecio[]) => void
+}) {
+  function addFranja() {
+    const ultima = franjas[franjas.length - 1]
+    const nuevaDesde = ultima ? ultima.hasta : '08:00'
+    onChange([...franjas, { desde: nuevaDesde, hasta: '22:00', precio: precioBase }])
+  }
+
+  function updateFranja(idx: number, patch: Partial<FranjaPrecio>) {
+    onChange(franjas.map((f, i) => (i === idx ? { ...f, ...patch } : f)))
+  }
+
+  function removeFranja(idx: number) {
+    onChange(franjas.filter((_, i) => i !== idx))
+  }
+
+  return (
+    <div>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: 8,
+        }}
+      >
+        <label
+          style={{ fontSize: '0.85rem', fontWeight: 600, color: '#374151' }}
+        >
+          Precios por horario
+        </label>
+        <button
+          type="button"
+          onClick={addFranja}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 4,
+            padding: '5px 10px',
+            borderRadius: 8,
+            border: '1.5px solid #2563eb',
+            background: 'white',
+            color: '#2563eb',
+            fontSize: '0.78rem',
+            fontWeight: 700,
+            cursor: 'pointer',
+            fontFamily: "'DM Sans', sans-serif",
+          }}
+        >
+          <Plus size={12} /> Agregar franja
+        </button>
+      </div>
+
+      {franjas.length === 0 ? (
+        <p
+          style={{
+            fontSize: '0.8rem',
+            color: '#94a3b8',
+            margin: '0 0 4px',
+            fontStyle: 'italic',
+          }}
+        >
+          Sin franjas — se usa el precio base para todos los horarios.
+        </p>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {franjas.map((f, i) => (
+            <div
+              key={i}
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr 1fr auto',
+                gap: 8,
+                alignItems: 'center',
+                padding: '10px 12px',
+                borderRadius: 10,
+                background: '#f8fafc',
+                border: '1px solid #e2e8f0',
+              }}
+            >
+              <div>
+                <div style={{ fontSize: '0.7rem', color: '#94a3b8', fontWeight: 600, marginBottom: 3 }}>
+                  DESDE
+                </div>
+                <input
+                  type="time"
+                  value={f.desde}
+                  onChange={(e) => updateFranja(i, { desde: e.target.value })}
+                  style={{
+                    width: '100%',
+                    padding: '7px 8px',
+                    borderRadius: 8,
+                    border: '1.5px solid #e2e8f0',
+                    fontSize: '0.83rem',
+                    fontFamily: "'DM Sans', sans-serif",
+                    background: 'white',
+                  }}
+                />
+              </div>
+              <div>
+                <div style={{ fontSize: '0.7rem', color: '#94a3b8', fontWeight: 600, marginBottom: 3 }}>
+                  HASTA
+                </div>
+                <input
+                  type="time"
+                  value={f.hasta}
+                  onChange={(e) => updateFranja(i, { hasta: e.target.value })}
+                  style={{
+                    width: '100%',
+                    padding: '7px 8px',
+                    borderRadius: 8,
+                    border: '1.5px solid #e2e8f0',
+                    fontSize: '0.83rem',
+                    fontFamily: "'DM Sans', sans-serif",
+                    background: 'white',
+                  }}
+                />
+              </div>
+              <div>
+                <div style={{ fontSize: '0.7rem', color: '#94a3b8', fontWeight: 600, marginBottom: 3 }}>
+                  PRECIO $
+                </div>
+                <input
+                  type="number"
+                  min={0}
+                  value={f.precio}
+                  onChange={(e) =>
+                    updateFranja(i, { precio: parseInt(e.target.value, 10) || 0 })
+                  }
+                  style={{
+                    width: '100%',
+                    padding: '7px 8px',
+                    borderRadius: 8,
+                    border: '1.5px solid #e2e8f0',
+                    fontSize: '0.83rem',
+                    fontFamily: "'DM Sans', sans-serif",
+                    background: 'white',
+                  }}
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => removeFranja(i)}
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: 8,
+                  border: 'none',
+                  background: '#fef2f2',
+                  color: '#dc2626',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  marginTop: 18,
+                }}
+              >
+                <X size={13} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 

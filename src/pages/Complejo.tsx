@@ -8,6 +8,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useTenant } from '@/context/TenantContext'
 import { useCanchas } from '@/hooks/useCanchas'
 import { useFotos } from '@/hooks/useFotos'
+import { useDocumentMeta } from '@/hooks/useDocumentMeta'
 import ComplejoNoEncontrado from '@/pages/ComplejoNoEncontrado'
 import Navbar from '@/components/brand/Navbar'
 import SportIcon, { sportPalette, sportLabel } from '@/components/brand/SportIcon'
@@ -42,6 +43,18 @@ export default function Complejo() {
     if (sportFilter === 'Todos') return canchas
     return canchas.filter((c) => sportLabel(c.tipo) === sportFilter)
   }, [canchas, sportFilter])
+
+  useDocumentMeta({
+    title: complejo
+      ? `${complejo.nombre} — Reservá tu cancha | TuCanchera`
+      : 'TuCanchera',
+    description: complejo
+      ? `Reservá canchas en ${complejo.nombre}. ${complejo.direccion ?? ''} — Disponibilidad en tiempo real.`
+      : 'Reservá canchas de fútbol y pádel en tiempo real.',
+    ogImage: fotos && fotos.length > 0 ? fotos[0].url : FALLBACK_HERO,
+    ogUrl: window.location.href,
+    canonical: window.location.href,
+  })
 
   if (loadingComplejo) return <ComplejoSkeleton />
   if (error || !complejo) return <ComplejoNoEncontrado />

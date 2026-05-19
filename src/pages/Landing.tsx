@@ -7,6 +7,7 @@ import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { fetchComplejosActivos } from '@/services/complejoService'
+import { useDocumentMeta } from '@/hooks/useDocumentMeta'
 import Navbar from '@/components/brand/Navbar'
 import SportIcon from '@/components/brand/SportIcon'
 import { Search, ChevronDown, MapPin, ArrowRight, Sparkles, Building2, Star } from 'lucide-react'
@@ -41,6 +42,14 @@ async function fetchAllCanchasActivas(): Promise<Cancha[]> {
 }
 
 export default function Landing() {
+  useDocumentMeta({
+    title: 'TuCanchera — Reservá canchas de fútbol y pádel',
+    description:
+      'Encontrá y reservá canchas de fútbol 5, fútbol 7 y pádel cerca tuyo. Disponibilidad en tiempo real, sin llamadas.',
+    ogImage: 'https://images.unsplash.com/photo-1508098682722-e99c643e3485?w=1200&q=80&fit=crop',
+    canonical: window.location.origin,
+  })
+
   const [sport, setSport] = useState<SportFilter>('Todos')
   const [search, setSearch] = useState('')
 
