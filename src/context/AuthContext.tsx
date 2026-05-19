@@ -30,9 +30,7 @@ interface AuthContextValue {
     metadata: { nombre: string; telefono?: string; rol: Rol },
     emailRedirectTo?: string
   ) => Promise<{ error: Error | null }>
-  signInWithGoogle: () => Promise<{ error: Error | null }>
   signOut: () => Promise<void>
-  refreshProfile: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined)
@@ -44,7 +42,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
 
   // Fetch del perfil desde la tabla profiles
-  // IMPORTANTE: usa user_id (FK a auth.users) y no id (PK interna)
   async function fetchProfile(userId: string) {
     const { data, error } = await supabase
       .from('profiles')
@@ -115,7 +112,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     })
     return () => { cancelled = true }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id])
 
   async function signIn(email: string, password: string) {
@@ -140,26 +136,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: error ? new Error(error.message) : null }
   }
 
-  async function signInWithGoogle() {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
-        queryParams: {
-          // Forzar selección de cuenta siempre (útil si el usuario tiene varias cuentas Google)
-          prompt: 'select_account',
-        },
-      },
-    })
-    return { error: error ? new Error(error.message) : null }
-  }
-
-  async function refreshProfile() {
-    if (!user) return
-    const updated = await fetchProfile(user.id)
-    setProfile(updated)
-  }
-
   async function signOut() {
     await supabase.auth.signOut()
     setUser(null)
@@ -177,9 +153,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loading,
         signIn,
         signUp,
-        signInWithGoogle,
         signOut,
-        refreshProfile,
       }}
     >
       {children}
@@ -188,7 +162,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 }
 
 // Hook para consumir el contexto de auth de forma segura
-// eslint-disable-next-line react-refresh/only-export-components
 export function useAuth() {
   const context = useContext(AuthContext)
   if (context === undefined) {

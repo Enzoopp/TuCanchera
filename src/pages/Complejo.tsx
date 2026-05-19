@@ -1,790 +1,345 @@
-// SRP: Página pública del complejo. Diseño replicado de ComplexPage.jsx
-// (hero 420px + galería horizontal + chips de deporte + grid de canchas).
-// Al hacer clic en una cancha, navega a /:slug/reservar/:canchaId donde se
-// elige el slot específico (Reservar.tsx).
+// ============================================================
+// COMPLEJO.TSX  (ruta: /:slug)
+// Página pública del complejo deportivo.
+// Muestra la información del complejo (logo, nombre, dirección,
+// descripción), su galería de fotos y las canchas disponibles
+// con filtros por tipo y orden de precio.
+// ============================================================
 
-import { useMemo, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useState, useMemo } from 'react'
+import { Link } from 'react-router-dom'
 import { useTenant } from '@/context/TenantContext'
 import { useCanchas } from '@/hooks/useCanchas'
 import { useFotos } from '@/hooks/useFotos'
-import { useDocumentMeta } from '@/hooks/useDocumentMeta'
 import ComplejoNoEncontrado from '@/pages/ComplejoNoEncontrado'
-import Navbar from '@/components/brand/Navbar'
-import SportIcon, { sportPalette, sportLabel } from '@/components/brand/SportIcon'
-import { ChevronLeft, MapPin, Clock, Star, Calendar, Phone, X, ArrowRight } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
+import { MapPin, Clock, DollarSign } from 'lucide-react'
 import type { Cancha, TipoCancha } from '@/types'
+import { tipoCanchaLabels } from '@/utils/canchaLabels'
 
-// Hero fallback si el complejo no tiene fotos cargadas
-const FALLBACK_HERO =
-  'https://images.unsplash.com/photo-1574629810360-7efbbe195018?w=1600&q=85&fit=crop'
-
-type SportFilter = 'Todos' | 'Fútbol 5' | 'Fútbol 7' | 'Pádel'
+// ── Tipos para los filtros ───────────────────────────────────
+// FiltroTipo: puede ser un tipo de cancha específico o 'todos'
+// OrdenPrecio: sin orden, ascendente o descendente por precio
+type FiltroTipo = TipoCancha | 'todos'
+type OrdenPrecio = 'default' | 'asc' | 'desc'
 
 export default function Complejo() {
+  // useTenant: lee el slug de la URL y carga el complejo correspondiente
+  // desde Supabase. Si el slug no existe → error y se muestra ComplejoNoEncontrado
   const { complejo, loading: loadingComplejo, error } = useTenant()
+
+  // useCanchas: busca todas las canchas activas del complejo (por ID)
   const { data: canchas, isLoading: loadingCanchas } = useCanchas(complejo?.id)
-  const { data: fotos } = useFotos(complejo?.id)
-  const navigate = useNavigate()
 
-  const [sportFilter, setSportFilter] = useState<SportFilter>('Todos')
-  const [lightbox, setLightbox] = useState<string | null>(null)
+  // useFotos: busca las fotos de la galería del complejo
+  const { data: fotos, isLoading: loadingFotos } = useFotos(complejo?.id)
 
-  // Tipos de deporte disponibles en este complejo
-  const sportsDisponibles = useMemo(() => {
-    if (!canchas) return [] as Array<'Fútbol 5' | 'Fútbol 7' | 'Pádel'>
-    const setTipos = new Set<TipoCancha>()
-    canchas.forEach((c) => setTipos.add(c.tipo))
-    return Array.from(setTipos).map((t) => sportLabel(t))
-  }, [canchas])
+  // ── Estados de los filtros ───────────────────────────────────
+  // filtroTipo: botón seleccionado (Todas / Fútbol 5 / Fútbol 7 / Pádel)
+  const [filtroTipo, setFiltroTipo] = useState<FiltroTipo>('todos')
+  // ordenPrecio: botón de orden seleccionado
+  const [ordenPrecio, setOrdenPrecio] = useState<OrdenPrecio>('default')
 
+  // ── Filtrado client-side con useMemo ─────────────────────────
+  // useMemo: recalcula solo cuando cambian 'canchas', 'filtroTipo' u 'ordenPrecio'
+  // Esto evita recorrer el array en cada render
   const canchasFiltradas = useMemo(() => {
     if (!canchas) return []
-    if (sportFilter === 'Todos') return canchas
-    return canchas.filter((c) => sportLabel(c.tipo) === sportFilter)
-  }, [canchas, sportFilter])
 
-  useDocumentMeta({
-    title: complejo
-      ? `${complejo.nombre} — Reservá tu cancha | TuCanchera`
-      : 'TuCanchera',
-    description: complejo
-      ? `Reservá canchas en ${complejo.nombre}. ${complejo.direccion ?? ''} — Disponibilidad en tiempo real.`
-      : 'Reservá canchas de fútbol y pádel en tiempo real.',
-    ogImage: fotos && fotos.length > 0 ? fotos[0].url : FALLBACK_HERO,
-    ogUrl: window.location.href,
-    canonical: window.location.href,
-  })
+    let resultado = [...canchas]  // copia para no mutar el original
 
-  if (loadingComplejo) return <ComplejoSkeleton />
-  if (error || !complejo) return <ComplejoNoEncontrado />
+    // 1) Filtrar por tipo de cancha (si no es 'todos')
+    if (filtroTipo !== 'todos') {
+      resultado = resultado.filter((c) => c.tipo === filtroTipo)
+    }
 
-  const heroImg = fotos && fotos.length > 0 ? fotos[0].url : FALLBACK_HERO
-  const chips: SportFilter[] = ['Todos', ...(sportsDisponibles as SportFilter[])]
+    // 2) Ordenar por precio
+    if (ordenPrecio === 'asc') {
+      resultado.sort((a, b) => a.precio - b.precio)   // menor a mayor
+    } else if (ordenPrecio === 'desc') {
+      resultado.sort((a, b) => b.precio - a.precio)   // mayor a menor
+    }
+
+    return resultado
+  }, [canchas, filtroTipo, ordenPrecio])
+
+  // ── Estados de carga / error ─────────────────────────────────
+
+  // Mientras TenantContext resuelve el slug: mostramos skeletons
+  if (loadingComplejo) {
+    return <ComplejoSkeleton />
+  }
+
+  // Si el slug no existe en la BD o hubo un error → 404 personalizado
+  if (error || !complejo) {
+    return <ComplejoNoEncontrado />
+  }
 
   return (
-    <div style={{ background: '#f8fafc', minHeight: '100vh', fontFamily: "'DM Sans', sans-serif" }}>
-      <Navbar />
+    <div className="min-h-screen bg-neutral-50">
 
-      {/* ── HERO 420px ────────────────────────────────────────────────────── */}
-      <div className="complex-hero" style={{ position: 'relative', height: 420, overflow: 'hidden' }}>
-        <img
-          src={heroImg}
-          alt={complejo.nombre}
-          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-        />
-        <div
-          style={{
-            position: 'absolute',
-            inset: 0,
-            background: 'linear-gradient(180deg, rgba(15,23,42,0.35) 0%, rgba(15,23,42,0.75) 100%)',
-          }}
-        />
+      {/* ── Header del complejo (logo + nombre + dirección) ── */}
+      <header className="bg-white shadow-sm">
+        <div className="mx-auto max-w-5xl px-4 py-8">
+          <div className="flex flex-col items-center gap-6 sm:flex-row sm:items-start">
 
-        {/* Back button */}
-        <button
-          type="button"
-          onClick={() => navigate('/explorar')}
-          style={{
-            position: 'absolute',
-            top: 24,
-            left: 32,
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 8,
-            background: 'rgba(255,255,255,0.15)',
-            backdropFilter: 'blur(8px)',
-            WebkitBackdropFilter: 'blur(8px)',
-            border: '1px solid rgba(255,255,255,0.25)',
-            borderRadius: 10,
-            color: 'white',
-            padding: '8px 16px',
-            cursor: 'pointer',
-            fontFamily: "'DM Sans', sans-serif",
-            fontSize: '0.85rem',
-            fontWeight: 600,
-          }}
-        >
-          <ChevronLeft size={16} strokeWidth={2.5} />
-          Volver
-        </button>
-
-        {/* Complex info */}
-        <div
-          style={{
-            position: 'absolute',
-            bottom: 0,
-            left: 0,
-            right: 0,
-            padding: '32px 40px',
-            display: 'flex',
-            alignItems: 'flex-end',
-            gap: 24,
-            flexWrap: 'wrap',
-          }}
-          className="complex-hero-info"
-        >
-          {/* Logo o inicial */}
-          <div
-            className="complex-logo"
-            style={{
-              width: 80,
-              height: 80,
-              borderRadius: 16,
-              flexShrink: 0,
-              background: complejo.logo_url
-                ? `#0f172a`
-                : 'linear-gradient(135deg, #2563eb, #1d4ed8)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              border: '3px solid white',
-              boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
-              marginBottom: -20,
-              overflow: 'hidden',
-            }}
-          >
+            {/* Logo: imagen real si existe, fallback con la primera letra del nombre */}
             {complejo.logo_url ? (
               <img
                 src={complejo.logo_url}
-                alt={`Logo ${complejo.nombre}`}
-                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                alt={`Logo de ${complejo.nombre}`}
+                className="h-24 w-24 rounded-xl object-cover shadow-md"
               />
             ) : (
-              <span
-                style={{
-                  color: 'white',
-                  fontFamily: "'Space Grotesk', sans-serif",
-                  fontSize: '2.4rem',
-                  fontWeight: 800,
-                }}
-              >
+              <div className="flex h-24 w-24 items-center justify-center rounded-xl bg-primary-100 text-3xl font-bold text-primary-600">
                 {complejo.nombre.charAt(0).toUpperCase()}
-              </span>
+              </div>
             )}
-          </div>
 
-          <div className="complex-info-text" style={{ paddingBottom: 20, minWidth: 0, flex: 1 }}>
-            <h1
-              style={{
-                fontFamily: "'Space Grotesk', sans-serif",
-                color: 'white',
-                fontSize: 'clamp(1.6rem, 3.5vw, 2.2rem)',
-                fontWeight: 800,
-                letterSpacing: '-0.03em',
-                margin: '0 0 8px',
-                textShadow: '0 2px 12px rgba(0,0,0,0.3)',
-                lineHeight: 1.1,
-              }}
-            >
-              {complejo.nombre}
-            </h1>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
-              {complejo.direccion && (
-                <div
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    color: 'rgba(255,255,255,0.85)',
-                    fontSize: '0.88rem',
-                  }}
-                >
-                  <MapPin size={15} color="#93c5fd" />
-                  {complejo.direccion}
-                </div>
+            {/* Información textual */}
+            <div className="text-center sm:text-left">
+              <h1 className="text-3xl font-bold text-neutral-900">
+                {complejo.nombre}
+              </h1>
+              {/* Descripción — opcional, puede ser null en la BD */}
+              {complejo.descripcion && (
+                <p className="mt-2 max-w-2xl text-neutral-600">
+                  {complejo.descripcion}
+                </p>
               )}
-              <div
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  color: 'rgba(255,255,255,0.85)',
-                  fontSize: '0.88rem',
-                }}
-              >
-                <Star size={15} color="#f59e0b" fill="#f59e0b" />
-                Nuevo en TuCanchera
-              </div>
+              {/* Dirección con ícono de pin — opcional */}
+              {complejo.direccion && (
+                <p className="mt-2 flex items-center justify-center gap-1.5 text-sm text-neutral-500 sm:justify-start">
+                  <MapPin className="h-4 w-4" />
+                  {complejo.direccion}
+                </p>
+              )}
             </div>
-          </div>
-
-          <div className="complex-cta" style={{ marginLeft: 'auto', paddingBottom: 20 }}>
-            <a
-              className="complex-cta-btn"
-              href="#canchas"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 8,
-                background: '#2563eb',
-                color: 'white',
-                padding: '14px 22px',
-                borderRadius: 12,
-                border: 'none',
-                fontFamily: "'DM Sans', sans-serif",
-                fontSize: '0.95rem',
-                fontWeight: 700,
-                textDecoration: 'none',
-                boxShadow: '0 4px 14px rgba(37,99,235,0.35)',
-                cursor: 'pointer',
-              }}
-            >
-              <Calendar size={17} />
-              Reservar ahora
-            </a>
           </div>
         </div>
-      </div>
+      </header>
 
-      {/* ── Chips de deporte debajo del hero ──────────────────────────────── */}
-      <div
-        style={{
-          background: 'white',
-          borderBottom: '1px solid #f1f5f9',
-          padding: '28px 40px 18px',
-          paddingLeft: 180,
-          display: 'flex',
-          gap: 10,
-          alignItems: 'center',
-          flexWrap: 'wrap',
-        }}
-        className="complex-sport-chips"
-      >
-        {sportsDisponibles.length > 0 ? (
-          sportsDisponibles.map((s) => {
-            const pal = sportPalette(s)
-            return (
-              <span
-                key={s}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  background: pal.bg,
-                  color: pal.text,
-                  padding: '6px 14px',
-                  borderRadius: 99,
-                  fontSize: '0.82rem',
-                  fontWeight: 700,
-                }}
-              >
-                <SportIcon sport={s} size={14} color={pal.text} />
-                {s}
-              </span>
-            )
-          })
-        ) : (
-          <span style={{ color: '#94a3b8', fontSize: '0.85rem' }}>
-            Sin canchas cargadas
-          </span>
-        )}
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-          <a
-            href="https://wa.me/543435059834"
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              padding: '7px 14px',
-              borderRadius: 10,
-              background: 'transparent',
-              color: '#64748b',
-              fontFamily: "'DM Sans', sans-serif",
-              fontSize: '0.85rem',
-              fontWeight: 600,
-              textDecoration: 'none',
-            }}
-          >
-            <Phone size={15} />
-            Contactar
-          </a>
-        </div>
-      </div>
-
-      {/* ── Galería + canchas ─────────────────────────────────────────────── */}
-      <div style={{ maxWidth: 1200, margin: '0 auto', padding: '36px 24px' }}>
-        {/* Descripción */}
-        {complejo.descripcion && (
-          <div
-            style={{
-              background: 'white',
-              borderRadius: 14,
-              padding: '20px 22px',
-              border: '1px solid #f1f5f9',
-              boxShadow: '0 2px 12px rgba(0,0,0,0.04)',
-              marginBottom: 32,
-            }}
-          >
-            <p style={{ color: '#475569', fontSize: '0.95rem', lineHeight: 1.6, margin: 0 }}>
-              {complejo.descripcion}
-            </p>
+      {/* ── Galería de fotos — scroll horizontal ── */}
+      {/* Solo se renderiza si ya cargaron y hay fotos */}
+      {!loadingFotos && fotos && fotos.length > 0 && (
+        <section className="mx-auto max-w-5xl px-4 py-6">
+          {/* overflow-x-auto + flex permite desplazarse horizontalmente en mobile */}
+          <div className="flex gap-3 overflow-x-auto pb-2">
+            {fotos.map((foto) => (
+              <img
+                key={foto.id}
+                src={foto.url}
+                alt={`Foto de ${complejo.nombre}`}
+                className="h-48 w-72 flex-shrink-0 rounded-lg object-cover shadow-sm"
+              />
+            ))}
           </div>
-        )}
-
-        {/* Galería */}
-        {fotos && fotos.length > 0 && (
-          <div style={{ marginBottom: 48 }}>
-            <h2
-              style={{
-                fontFamily: "'Space Grotesk', sans-serif",
-                fontSize: '1.25rem',
-                fontWeight: 700,
-                color: '#0f172a',
-                letterSpacing: '-0.02em',
-                marginBottom: 16,
-              }}
-            >
-              Galería
-            </h2>
-            <div
-              style={{
-                display: 'flex',
-                gap: 12,
-                overflowX: 'auto',
-                paddingBottom: 8,
-                scrollbarWidth: 'thin',
-              }}
-            >
-              {fotos.map((foto) => (
-                <button
-                  type="button"
-                  key={foto.id}
-                  onClick={() => setLightbox(foto.url)}
-                  style={{
-                    width: 200,
-                    height: 130,
-                    borderRadius: 12,
-                    overflow: 'hidden',
-                    flexShrink: 0,
-                    cursor: 'pointer',
-                    padding: 0,
-                    border: 'none',
-                    background: 'transparent',
-                    boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
-                    transition: 'transform 0.2s',
-                  }}
-                  onMouseEnter={(e) => (e.currentTarget.style.transform = 'scale(1.03)')}
-                  onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
-                >
-                  <img
-                    src={foto.url}
-                    alt=""
-                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                  />
-                </button>
-              ))}
-            </div>
+        </section>
+      )}
+      {/* Mientras cargan las fotos: skeletons de placeholder */}
+      {loadingFotos && (
+        <section className="mx-auto max-w-5xl px-4 py-6">
+          <div className="flex gap-3">
+            {[1, 2, 3].map((i) => (
+              <Skeleton key={i} className="h-48 w-72 flex-shrink-0 rounded-lg" />
+            ))}
           </div>
-        )}
-
-        {/* Canchas */}
-        <div id="canchas">
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              marginBottom: 24,
-              flexWrap: 'wrap',
-              gap: 12,
-            }}
-          >
-            <h2
-              style={{
-                fontFamily: "'Space Grotesk', sans-serif",
-                fontSize: '1.5rem',
-                fontWeight: 800,
-                color: '#0f172a',
-                letterSpacing: '-0.02em',
-                margin: 0,
-              }}
-            >
-              Canchas disponibles
-            </h2>
-            {chips.length > 1 && (
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                {chips.map((s) => {
-                  const active = sportFilter === s
-                  return (
-                    <button
-                      key={s}
-                      type="button"
-                      onClick={() => setSportFilter(s)}
-                      style={{
-                        padding: '7px 16px',
-                        borderRadius: 99,
-                        border: '1.5px solid',
-                        borderColor: active ? '#2563eb' : '#e2e8f0',
-                        background: active ? '#2563eb' : 'white',
-                        color: active ? 'white' : '#374151',
-                        fontFamily: "'DM Sans', sans-serif",
-                        fontSize: '0.84rem',
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        transition: 'all 0.15s',
-                      }}
-                    >
-                      {s}
-                    </button>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-
-          {loadingCanchas ? (
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-                gap: 20,
-              }}
-            >
-              {[1, 2, 3, 4, 5, 6].map((i) => (
-                <CourtSkeleton key={i} />
-              ))}
-            </div>
-          ) : canchasFiltradas.length === 0 ? (
-            <div
-              style={{
-                background: 'white',
-                borderRadius: 14,
-                border: '1.5px dashed #cbd5e1',
-                padding: 48,
-                textAlign: 'center',
-                color: '#64748b',
-                fontSize: '0.95rem',
-              }}
-            >
-              {canchas && canchas.length > 0
-                ? 'No hay canchas que coincidan con este filtro.'
-                : 'Este complejo todavía no tiene canchas cargadas.'}
-            </div>
-          ) : (
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-                gap: 20,
-              }}
-            >
-              {canchasFiltradas.map((c, idx) => (
-                <CourtCard
-                  key={c.id}
-                  cancha={c}
-                  slug={complejo.slug}
-                  fallbackIdx={idx}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Lightbox */}
-      {lightbox && (
-        <div
-          onClick={() => setLightbox(null)}
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,0.85)',
-            zIndex: 999,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-          }}
-        >
-          <img
-            src={lightbox}
-            alt=""
-            style={{ maxWidth: '90vw', maxHeight: '85vh', borderRadius: 16, boxShadow: '0 24px 80px rgba(0,0,0,0.5)' }}
-          />
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation()
-              setLightbox(null)
-            }}
-            style={{
-              position: 'absolute',
-              top: 24,
-              right: 24,
-              background: 'rgba(255,255,255,0.15)',
-              border: 'none',
-              borderRadius: 99,
-              width: 44,
-              height: 44,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-            }}
-          >
-            <X color="white" />
-          </button>
-        </div>
+        </section>
       )}
 
-      <style>{`
-        /* Tablet */
-        @media (max-width: 900px) {
-          .complex-hero-info { padding: 20px !important; }
-          .complex-sport-chips { padding-left: 20px !important; padding-right: 20px !important; }
-        }
-        /* Mobile */
-        @media (max-width: 640px) {
-          .complex-hero { height: 320px !important; }
-          .complex-hero-info {
-            padding: 14px 14px 18px !important;
-            gap: 10px !important;
-            align-items: flex-start !important;
-          }
-          .complex-logo {
-            width: 56px !important;
-            height: 56px !important;
-            margin-bottom: 0 !important;
-            border-radius: 12px !important;
-          }
-          .complex-info-text {
-            padding-bottom: 0 !important;
-          }
-          .complex-cta {
-            flex-basis: 100% !important;
-            width: 100% !important;
-            margin-left: 0 !important;
-            padding-bottom: 0 !important;
-          }
-          .complex-cta-btn {
-            width: 100% !important;
-            box-sizing: border-box !important;
-            justify-content: center !important;
-            display: inline-flex !important;
-          }
-          .complex-sport-chips {
-            padding: 18px 14px 14px !important;
-          }
-        }
-      `}</style>
-    </div>
-  )
-}
+      {/* ── Sección de filtros + lista de canchas ── */}
+      <main className="mx-auto max-w-5xl px-4 py-6">
+        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <h2 className="text-xl font-semibold text-neutral-900">
+            Canchas disponibles
+          </h2>
 
-/* ─────────────────────────────────────────────────────────────────────────── */
-/* Subcomponentes                                                             */
-/* ─────────────────────────────────────────────────────────────────────────── */
+          {/* ── Barra de filtros ── */}
+          <div className="flex flex-wrap gap-2">
 
-const COURT_FALLBACK_IMGS = [
-  'https://images.unsplash.com/photo-1575361204480-aadea25e6e68?w=400&q=80&fit=crop',
-  'https://images.unsplash.com/photo-1459865264687-595d652de67e?w=400&q=80&fit=crop',
-  'https://images.unsplash.com/photo-1551958219-acbc04e21db8?w=400&q=80&fit=crop',
-  'https://images.unsplash.com/photo-1612872087720-bb876e2e67d1?w=400&q=80&fit=crop',
-  'https://images.unsplash.com/photo-1554068865-24cecd4e34b8?w=400&q=80&fit=crop',
-  'https://images.unsplash.com/photo-1508098682722-e99c643e3485?w=400&q=80&fit=crop',
-]
-
-function CourtCard({
-  cancha,
-  slug,
-  fallbackIdx,
-}: {
-  cancha: Cancha
-  slug: string
-  fallbackIdx: number
-}) {
-  const [hovered, setHovered] = useState(false)
-  const sport = sportLabel(cancha.tipo)
-  const pal = sportPalette(sport)
-  const img = COURT_FALLBACK_IMGS[fallbackIdx % COURT_FALLBACK_IMGS.length]
-
-  return (
-    <Link
-      to={`/${slug}/reservar/${cancha.id}`}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        display: 'block',
-        textDecoration: 'none',
-        background: 'white',
-        borderRadius: 16,
-        overflow: 'hidden',
-        boxShadow: hovered ? '0 12px 40px rgba(0,0,0,0.12)' : '0 2px 12px rgba(0,0,0,0.06)',
-        border: '1px solid #f1f5f9',
-        transition: 'all 0.2s ease',
-        transform: hovered ? 'translateY(-3px)' : 'none',
-      }}
-    >
-      <div style={{ position: 'relative', height: 160, overflow: 'hidden' }}>
-        <img
-          src={img}
-          alt={cancha.nombre}
-          style={{
-            width: '100%',
-            height: '100%',
-            objectFit: 'cover',
-            transform: hovered ? 'scale(1.05)' : 'scale(1)',
-            transition: 'transform 0.35s ease',
-          }}
-        />
-        <div
-          style={{
-            position: 'absolute',
-            top: 12,
-            left: 12,
-            right: 12,
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'flex-start',
-            gap: 6,
-          }}
-        >
-          <span
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 5,
-              background: pal.bg,
-              color: pal.text,
-              padding: '4px 10px',
-              borderRadius: 99,
-              fontSize: '0.74rem',
-              fontWeight: 700,
-            }}
-          >
-            <SportIcon sport={sport} size={12} color={pal.text} />
-            {sport}
-          </span>
-          <span
-            style={{
-              background: 'rgba(22,163,74,0.95)',
-              color: 'white',
-              padding: '4px 10px',
-              borderRadius: 99,
-              fontSize: '0.72rem',
-              fontWeight: 700,
-            }}
-          >
-            Ver turnos
-          </span>
-        </div>
-      </div>
-      <div style={{ padding: '16px 18px 18px' }}>
-        <h3
-          style={{
-            fontFamily: "'Space Grotesk', sans-serif",
-            fontSize: '0.95rem',
-            fontWeight: 700,
-            color: '#0f172a',
-            margin: '0 0 10px',
-            letterSpacing: '-0.01em',
-          }}
-        >
-          {cancha.nombre}
-        </h3>
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            marginBottom: 14,
-          }}
-        >
-          <div
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 5,
-              color: '#64748b',
-              fontSize: '0.82rem',
-            }}
-          >
-            <Clock size={14} />
-            {cancha.duracion_min} min
-          </div>
-          <div style={{ textAlign: 'right' }}>
-            <div
-              style={{
-                fontFamily: "'Space Grotesk', sans-serif",
-                fontSize: '1.2rem',
-                fontWeight: 800,
-                color: '#0f172a',
-                letterSpacing: '-0.02em',
-              }}
-            >
-              ${cancha.precio.toLocaleString('es-AR')}
+            {/* Filtro por tipo de cancha */}
+            {/* Grupo de botones con fondo blanco y borde (pill selector) */}
+            <div className="flex gap-1 rounded-lg bg-white p-1 shadow-sm ring-1 ring-neutral-200">
+              {/* Botón "Todas" */}
+              <FilterButton
+                active={filtroTipo === 'todos'}
+                onClick={() => setFiltroTipo('todos')}
+              >
+                Todas
+              </FilterButton>
+              {/* Botones dinámicos para cada tipo de cancha */}
+              {(['futbol5', 'futbol7', 'padel'] as TipoCancha[]).map((tipo) => (
+                <FilterButton
+                  key={tipo}
+                  active={filtroTipo === tipo}
+                  onClick={() => setFiltroTipo(tipo)}
+                >
+                  {/* tipoCanchaLabels convierte 'futbol5' → 'Fútbol 5' etc. */}
+                  {tipoCanchaLabels[tipo]}
+                </FilterButton>
+              ))}
             </div>
-            <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: 1 }}>por turno</div>
+
+            {/* Filtro por precio */}
+            <div className="flex gap-1 rounded-lg bg-white p-1 shadow-sm ring-1 ring-neutral-200">
+              <FilterButton
+                active={ordenPrecio === 'default'}
+                onClick={() => setOrdenPrecio('default')}
+              >
+                Sin orden
+              </FilterButton>
+              <FilterButton
+                active={ordenPrecio === 'asc'}
+                onClick={() => setOrdenPrecio('asc')}
+              >
+                $ Menor
+              </FilterButton>
+              <FilterButton
+                active={ordenPrecio === 'desc'}
+                onClick={() => setOrdenPrecio('desc')}
+              >
+                $ Mayor
+              </FilterButton>
+            </div>
           </div>
         </div>
-        <div
-          style={{
-            width: '100%',
-            padding: '10px 14px',
-            borderRadius: 10,
-            background: '#2563eb',
-            color: 'white',
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 6,
-            fontFamily: "'DM Sans', sans-serif",
-            fontSize: '0.87rem',
-            fontWeight: 700,
-            boxShadow: '0 4px 12px rgba(37,99,235,0.2)',
-          }}
-        >
-          Reservar turno
-          <ArrowRight size={14} />
-        </div>
-      </div>
-    </Link>
-  )
-}
 
-function CourtSkeleton() {
-  return (
-    <div
-      style={{
-        background: 'white',
-        borderRadius: 16,
-        overflow: 'hidden',
-        border: '1px solid #f1f5f9',
-        boxShadow: '0 2px 12px rgba(0,0,0,0.04)',
-      }}
-    >
-      <div style={{ height: 160, background: '#f1f5f9' }} />
-      <div style={{ padding: '16px 18px 18px' }}>
-        <div style={{ height: 14, background: '#f1f5f9', borderRadius: 6, marginBottom: 10, width: '70%' }} />
-        <div style={{ height: 10, background: '#f1f5f9', borderRadius: 6, marginBottom: 16, width: '50%' }} />
-        <div style={{ height: 36, background: '#f1f5f9', borderRadius: 10 }} />
-      </div>
+        {/* ── Lista de canchas ── */}
+        {loadingCanchas ? (
+          // Skeleton grid mientras cargan las canchas
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {[1, 2, 3].map((i) => (
+              <Skeleton key={i} className="h-48 rounded-xl" />
+            ))}
+          </div>
+        ) : canchasFiltradas.length === 0 ? (
+          // Estado vacío: distingue entre "no hay canchas" y "no coincide el filtro"
+          <div className="rounded-xl bg-white p-12 text-center shadow-sm ring-1 ring-neutral-200">
+            <p className="text-neutral-500">
+              {canchas?.length === 0
+                ? 'Este complejo aún no tiene canchas cargadas.'
+                : 'No hay canchas que coincidan con los filtros seleccionados.'}
+            </p>
+          </div>
+        ) : (
+          // Grid de CanchaCard — una por cancha
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {canchasFiltradas.map((cancha) => (
+              <CanchaCard key={cancha.id} cancha={cancha} slug={complejo.slug} />
+            ))}
+          </div>
+        )}
+      </main>
     </div>
   )
 }
 
+// ── CanchaCard ───────────────────────────────────────────────
+// Tarjeta individual para una cancha.
+// Muestra: nombre, tipo (badge), precio, duración, y botón "Ver turnos"
+// Al hacer clic navega a /:slug/reservar/:canchaId
+function CanchaCard({ cancha, slug }: { cancha: Cancha; slug: string }) {
+  return (
+    <Card className="transition-shadow hover:shadow-md">
+      <CardHeader>
+        <div className="flex items-start justify-between">
+          <CardTitle className="text-lg">{cancha.nombre}</CardTitle>
+          {/* Badge de tipo: Fútbol 5, Fútbol 7, Pádel */}
+          <Badge variant="secondary">
+            {tipoCanchaLabels[cancha.tipo]}
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-2 text-sm text-neutral-600">
+          {/* Precio por turno */}
+          <div className="flex items-center gap-2">
+            <DollarSign className="h-4 w-4 text-neutral-400" />
+            <span className="font-semibold text-neutral-900">
+              {/* toLocaleString('es-AR'): formatea con separador de miles en español */}
+              ${cancha.precio.toLocaleString('es-AR')}
+            </span>
+            <span>por turno</span>
+          </div>
+          {/* Duración del turno en minutos */}
+          <div className="flex items-center gap-2">
+            <Clock className="h-4 w-4 text-neutral-400" />
+            <span>{cancha.duracion_min} minutos</span>
+          </div>
+        </div>
+        {/* Botón que lleva a la página de reserva de esta cancha específica */}
+        <Link to={`/${slug}/reservar/${cancha.id}`} className="mt-4 block">
+          <Button className="w-full" size="lg">
+            Ver turnos
+          </Button>
+        </Link>
+      </CardContent>
+    </Card>
+  )
+}
+
+// ── FilterButton ─────────────────────────────────────────────
+// Botón de filtro reutilizable dentro del selector pill.
+// Cuando 'active' es true, se pone con fondo azul y texto blanco.
+// Cuando es false, fondo transparente con texto gris.
+function FilterButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+        active
+          ? 'bg-primary-600 text-white'            // seleccionado
+          : 'text-neutral-600 hover:bg-neutral-100' // no seleccionado
+      }`}
+    >
+      {children}
+    </button>
+  )
+}
+
+// ── ComplejoSkeleton ─────────────────────────────────────────
+// Pantalla de carga completa que imita la estructura de la página
+// mientras TenantContext resuelve el slug de la URL.
 function ComplejoSkeleton() {
   return (
-    <div style={{ background: '#f8fafc', minHeight: '100vh', fontFamily: "'DM Sans', sans-serif" }}>
-      <div style={{ height: 420, background: '#e2e8f0' }} />
-      <div style={{ maxWidth: 1200, margin: '0 auto', padding: '36px 24px' }}>
-        <div style={{ height: 28, background: '#e2e8f0', borderRadius: 8, width: 240, marginBottom: 24 }} />
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-            gap: 20,
-          }}
-        >
+    <div className="min-h-screen bg-neutral-50">
+      <header className="bg-white shadow-sm">
+        <div className="mx-auto max-w-5xl px-4 py-8">
+          <div className="flex flex-col items-center gap-6 sm:flex-row sm:items-start">
+            <Skeleton className="h-24 w-24 rounded-xl" />
+            <div className="space-y-3 text-center sm:text-left">
+              <Skeleton className="h-8 w-64" />   {/* Nombre */}
+              <Skeleton className="h-4 w-96" />   {/* Descripción */}
+              <Skeleton className="h-4 w-48" />   {/* Dirección */}
+            </div>
+          </div>
+        </div>
+      </header>
+      <main className="mx-auto max-w-5xl px-4 py-6">
+        <Skeleton className="mb-6 h-6 w-48" />
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {[1, 2, 3].map((i) => (
-            <CourtSkeleton key={i} />
+            <Skeleton key={i} className="h-48 rounded-xl" />
           ))}
         </div>
-      </div>
+      </main>
     </div>
   )
 }
-
