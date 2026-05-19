@@ -1,14 +1,20 @@
 // ============================================================
-// REGISTER.TSX
-// Página de registro para clientes nuevos.
-// Muestra un formulario con nombre, teléfono, email y contraseña.
-// Al registrarse, Supabase crea el usuario y un trigger de la base
-// de datos crea automáticamente el perfil con rol='cliente'.
+// REGISTERADMIN.TSX
+// Página de registro exclusiva para administradores de complejos.
+// A diferencia del registro normal, acá se necesita un CÓDIGO DE INVITACIÓN
+// que solo tiene quien va a ser admin. Sin el código, no se puede registrar.
+//
+// Flujo:
+//   1) Validar el código ingresado contra la tabla codigos_invitacion en la BD
+//   2) Si el código es válido y no fue usado → crear la cuenta con rol='admin'
+//   3) Marcar el código como usado para que nadie más lo use
+//   4) Redirigir al panel de admin para que configure su complejo
 // ============================================================
 
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
+import { supabase } from '@/lib/supabase'  // cliente de Supabase directo (para verificar el código)
 
 // Componentes de UI (tarjeta, inputs, botón) — vienen de shadcn/ui
 import { Button } from '@/components/ui/button'
@@ -22,27 +28,28 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 
-export default function Register() {
+export default function RegisterAdmin() {
   // useNavigate: permite redirigir al usuario a otra página por código
   const navigate = useNavigate()
 
-  // Del AuthContext traemos solo signUp: la función para crear una cuenta nueva
+  // Del AuthContext traemos signUp: la función para crear una cuenta en Supabase
   const { signUp } = useAuth()
 
   // Estados del formulario — uno por cada campo
+  const [codigo, setCodigo] = useState('')      // código de invitación (obligatorio)
   const [nombre, setNombre] = useState('')
-  const [telefono, setTelefono] = useState('')   // campo opcional
+  const [telefono, setTelefono] = useState('')  // opcional
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)   // mensaje de error visible
-  const [loading, setLoading] = useState(false)             // true mientras se procesa el registro
+  const [loading, setLoading] = useState(false)             // true mientras se procesa
 
   // ── Envío del formulario ────────────────────────────────────
   async function handleSubmit(e: FormEvent) {
-    e.preventDefault()   // Evita que el navegador recargue la página al enviar el form
+    e.preventDefault()   // Evita que el navegador recargue la página
     setError(null)
 
-    // Validación manual de la contraseña antes de llamar a Supabase
+    // Validación de contraseña antes de hacer nada
     if (password.length < 6) {
       setError('La contraseña debe tener al menos 6 caracteres.')
       return
@@ -50,26 +57,59 @@ export default function Register() {
 
     setLoading(true)
 
-    // Llamamos a signUp del AuthContext, que internamente llama a Supabase.
-    // Pasamos los metadatos (nombre, telefono, rol) para que el trigger
-    // de la base de datos los use al crear el perfil automáticamente.
-    const { error } = await signUp(email, password, {
-      nombre,
-      telefono: telefono || undefined,  // si el campo está vacío, no se envía
-      rol: 'cliente',                   // los registros normales siempre son clientes
-    }, `${window.location.origin}/auth/callback`)  // URL a la que redirige Supabase al confirmar email
+    // ── PASO 1: Verificar el código de invitación ──────────────
+    // Buscamos en la tabla 'codigos_invitacion' si existe una fila
+    // que coincida con el código ingresado por el usuario.
+    // .trim() elimina espacios en blanco al inicio y al final del texto.
+    const { data: codigoData, error: codigoError } = await supabase
+      .from('codigos_invitacion')
+      .select('id, usado')        // solo traemos el id y si ya fue usado
+      .eq('codigo', codigo.trim()) // filtramos por el código ingresado
+      .single()                   // esperamos exactamente un resultado
 
-    setLoading(false)
-
-    if (error) {
-      // Traducimos el error técnico de Supabase al español
-      setError(translateRegisterError(error.message))
+    // Si no encontró el código → no es válido
+    if (codigoError || !codigoData) {
+      setError('El código de invitación no es válido.')
+      setLoading(false)
       return
     }
 
-    // Registro exitoso → redirigimos al login con un mensaje informativo
-    navigate('/login', {
-      state: { message: 'Cuenta creada. Revisá tu email para confirmar el registro.' },
+    // Si el código ya fue usado por alguien más → rechazar
+    if (codigoData.usado) {
+      setError('Este código de invitación ya fue utilizado.')
+      setLoading(false)
+      return
+    }
+
+    // ── PASO 2: Crear la cuenta con rol='admin' ────────────────
+    // Mismo signUp que el Register normal, pero con rol='admin'
+    // El trigger de la BD creará el perfil con ese rol automáticamente
+    const { error: signUpError } = await signUp(email, password, {
+      nombre,
+      telefono: telefono || undefined,  // si está vacío, no se envía
+      rol: 'admin',                     // diferencia clave vs Register normal
+    })
+
+    if (signUpError) {
+      setError(translateRegisterError(signUpError.message))
+      setLoading(false)
+      return
+    }
+
+    // ── PASO 3: Marcar el código como usado ───────────────────
+    // Actualizamos la fila en la BD para que este código no pueda
+    // ser reutilizado por otro usuario
+    await supabase
+      .from('codigos_invitacion')
+      .update({ usado: true })    // cambiamos 'usado' a true
+      .eq('id', codigoData.id)   // solo la fila de este código
+
+    setLoading(false)
+
+    // ── PASO 4: Redirigir al panel admin ──────────────────────
+    // El admin va directo a crear/configurar su complejo deportivo
+    navigate('/admin/complejo', {
+      state: { message: 'Cuenta de administrador creada. Configurá tu complejo.' },
     })
   }
 
@@ -81,17 +121,31 @@ export default function Register() {
       {/* Tarjeta blanca centrada con ancho máximo de 448px */}
       <Card className="w-full max-w-md">
 
-        {/* Encabezado: título y subtítulo */}
+        {/* Encabezado: título y descripción */}
         <CardHeader className="text-center">
           <CardTitle className="text-2xl font-bold text-primary-600">
-            Crear cuenta
+            Registro de Administrador
           </CardTitle>
-          <CardDescription>Registrate para reservar canchas</CardDescription>
+          <CardDescription>
+            Ingresá tu código de invitación para registrarte como administrador de un complejo
+          </CardDescription>
         </CardHeader>
 
         <CardContent>
-          {/* Formulario de registro */}
           <form onSubmit={handleSubmit} className="space-y-4">
+
+            {/* Campo exclusivo de esta página: Código de invitación */}
+            <div className="space-y-2">
+              <Label htmlFor="codigo">Código de invitación</Label>
+              <Input
+                id="codigo"
+                type="text"
+                placeholder="Ingresá tu código"
+                value={codigo}
+                onChange={(e) => setCodigo(e.target.value)}  // actualiza el estado en tiempo real
+                required
+              />
+            </div>
 
             {/* Campo Nombre completo — obligatorio */}
             <div className="space-y-2">
@@ -101,12 +155,12 @@ export default function Register() {
                 type="text"
                 placeholder="Tu nombre"
                 value={nombre}
-                onChange={(e) => setNombre(e.target.value)}  // actualiza el estado en tiempo real
+                onChange={(e) => setNombre(e.target.value)}
                 required
               />
             </div>
 
-            {/* Campo Teléfono — opcional, por eso no tiene 'required' */}
+            {/* Campo Teléfono — opcional */}
             <div className="space-y-2">
               <Label htmlFor="telefono">Teléfono (opcional)</Label>
               <Input
@@ -132,7 +186,7 @@ export default function Register() {
               />
             </div>
 
-            {/* Campo Contraseña — mínimo 6 caracteres (validado en handleSubmit) */}
+            {/* Campo Contraseña */}
             <div className="space-y-2">
               <Label htmlFor="password">Contraseña</Label>
               <Input
@@ -147,23 +201,29 @@ export default function Register() {
               />
             </div>
 
-            {/* Mensaje de error (solo se muestra si hay un error) */}
+            {/* Mensaje de error (solo aparece si hay un error) */}
             {error && (
               <p className="text-sm text-destructive">{error}</p>
             )}
 
-            {/* Botón de envío — cambia el texto mientras carga */}
+            {/* Botón de envío — cambia texto mientras carga */}
             <Button type="submit" className="w-full" size="lg" disabled={loading}>
-              {loading ? 'Creando cuenta...' : 'Crear cuenta'}
+              {loading ? 'Creando cuenta...' : 'Registrarme como admin'}
             </Button>
           </form>
 
-          {/* Link de navegación para usuarios que ya tienen cuenta */}
+          {/* Links de navegación alternativos */}
           <div className="mt-6 text-center text-sm text-muted-foreground">
             <p>
               ¿Ya tenés cuenta?{' '}
               <Link to="/login" className="font-medium text-primary-600 hover:underline">
                 Iniciá sesión
+              </Link>
+            </p>
+            <p className="mt-2">
+              ¿No sos admin?{' '}
+              <Link to="/register" className="font-medium text-primary-600 hover:underline">
+                Registrate como cliente
               </Link>
             </p>
           </div>

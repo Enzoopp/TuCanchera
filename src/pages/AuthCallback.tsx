@@ -1,120 +1,125 @@
-// Página de callback post-autenticación.
-// Maneja dos flujos distintos:
-//   1. Confirmación de email (type=signup en el hash) → muestra pantalla "Email confirmado"
-//   2. OAuth (Google, etc.) → redirige automáticamente según rol
+// ============================================================
+// AUTHCALLBACK.TSX  (ruta: /auth/callback)
+// Página intermedia que maneja el redirect de Supabase después
+// de que el usuario hace clic en el link de confirmación de email.
+//
+// Supabase redirige acá con un token en el hash de la URL (ej: #access_token=...).
+// El cliente de Supabase detecta ese token automáticamente y dispara
+// el evento onAuthStateChange con SIGNED_IN o USER_UPDATED.
+//
+// Esta página tiene TRES vistas según el estado:
+//   1) 'cargando'  → spinner mientras se procesa el token
+//   2) 'confirmado' → cuenta activada, botón para ir al login
+//   3) 'error'     → link inválido o expirado
+// ============================================================
 
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
-import { CheckCircle, XCircle, Zap } from 'lucide-react'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
 
-type Estado = 'cargando' | 'email_confirmado' | 'error'
+// CheckCircle: tilde verde de confirmación | XCircle: cruz roja de error
+import { CheckCircle, XCircle } from 'lucide-react'
+
+// Tipo que define los tres estados posibles de la página
+type Estado = 'cargando' | 'confirmado' | 'error'
 
 export default function AuthCallback() {
   const navigate = useNavigate()
+
+  // Estado de la UI: empieza en 'cargando' hasta recibir respuesta de Supabase
   const [estado, setEstado] = useState<Estado>('cargando')
 
   useEffect(() => {
-    // Detectar si es confirmación de email (hash contiene type=signup o type=email_change)
-    const hash = window.location.hash
-    const isEmailConfirmation =
-      hash.includes('type=signup') || hash.includes('type=email_change')
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
-          if (isEmailConfirmation) {
-            setEstado('email_confirmado')
-          } else {
-            // OAuth (Google) o invite de admin: redirigir según rol
-            if (session?.user) {
-              const { data: profile } = await supabase
-                .from('profiles')
-                .select('rol')
-                .eq('user_id', session.user.id)
-                .single()
-
-              if (profile?.rol === 'superadmin') {
-                navigate('/superadmin', { replace: true })
-              } else if (profile?.rol === 'admin') {
-                navigate('/admin/dashboard', { replace: true })
-              } else {
-                navigate('/explorar', { replace: true })
-              }
-            } else {
-              navigate('/explorar', { replace: true })
-            }
-          }
-        }
+    // Supabase detecta el token del hash de la URL automáticamente al montar el componente.
+    // Escuchamos el evento para saber si la confirmación fue exitosa.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
+        // El token es válido → cuenta confirmada
+        setEstado('confirmado')
       }
-    )
+    })
 
-    // Timeout: si en 8s no hubo evento, mostrar error
+    // Timeout defensivo: si en 5 segundos no llegó ningún evento de Supabase,
+    // mostramos error (el link puede haber expirado o ser inválido)
     const timeout = setTimeout(() => {
-      setEstado((prev) => (prev === 'cargando' ? 'error' : prev))
-    }, 8000)
+      setEstado((prev) => prev === 'cargando' ? 'error' : prev)
+    }, 5000)
 
+    // Cleanup: cancelar la suscripción y el timeout al desmontar
     return () => {
       subscription.unsubscribe()
       clearTimeout(timeout)
     }
-  }, [navigate])
+  }, [])
 
+  // ── Vista: cargando ──────────────────────────────────────────
   if (estado === 'cargando') {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-neutral-100">
-        <div className="w-full max-w-sm rounded-2xl border border-neutral-200 bg-white p-10 text-center shadow-sm">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-primary-600">
-            <Zap className="h-6 w-6 text-white" />
-          </div>
-          <div className="mx-auto h-6 w-6 animate-spin rounded-full border-4 border-primary-100 border-t-primary-600" />
-          <p className="mt-4 text-sm font-medium text-neutral-600">Verificando tu cuenta…</p>
-          <p className="mt-1 text-xs text-neutral-400">Un momento por favor.</p>
-        </div>
+      <div className="flex min-h-screen items-center justify-center bg-neutral-50 px-4">
+        <Card className="w-full max-w-md text-center">
+          <CardHeader>
+            {/* Spinner: animación de giro con border-t de color verde */}
+            <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-4 border-primary-200 border-t-primary-600" />
+            <CardTitle className="text-xl text-primary-600">Verificando tu cuenta...</CardTitle>
+            <CardDescription>Un momento por favor.</CardDescription>
+          </CardHeader>
+        </Card>
       </div>
     )
   }
 
+  // ── Vista: error ─────────────────────────────────────────────
   if (estado === 'error') {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-neutral-100">
-        <div className="w-full max-w-sm rounded-2xl border border-neutral-200 bg-white p-10 text-center shadow-sm">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-red-100">
-            <XCircle className="h-8 w-8 text-red-500" />
-          </div>
-          <h2 className="text-lg font-black text-neutral-900">Link inválido o expirado</h2>
-          <p className="mt-2 text-sm text-neutral-500">
-            Este link ya fue usado o expiró. Podés solicitar uno nuevo iniciando sesión.
-          </p>
-          <button
-            onClick={() => navigate('/login')}
-            className="mt-6 w-full rounded-lg bg-neutral-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-neutral-700 transition-colors"
-          >
-            Ir al inicio de sesión
-          </button>
-        </div>
+      <div className="flex min-h-screen items-center justify-center bg-neutral-50 px-4">
+        <Card className="w-full max-w-md text-center">
+          <CardHeader>
+            {/* Ícono de error en rojo */}
+            <XCircle className="mx-auto mb-2 h-12 w-12 text-destructive" />
+            <CardTitle className="text-xl">Link inválido o expirado</CardTitle>
+            <CardDescription>
+              Este link ya fue usado o expiró. Podés solicitar uno nuevo iniciando sesión.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button className="w-full" onClick={() => navigate('/login')}>
+              Ir al inicio de sesión
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     )
   }
 
-  // estado === 'email_confirmado'
+  // ── Vista: confirmado (estado === 'confirmado') ───────────────
   return (
-    <div className="flex min-h-screen items-center justify-center bg-neutral-100">
-      <div className="w-full max-w-sm rounded-2xl border border-neutral-200 bg-white p-10 text-center shadow-sm">
-        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100">
-          <CheckCircle className="h-8 w-8 text-emerald-500" />
-        </div>
-        <h2 className="text-xl font-black text-neutral-900">¡Email confirmado!</h2>
-        <p className="mt-2 text-sm text-neutral-500">
-          Tu cuenta está activa. Ya podés iniciar sesión y reservar canchas.
-        </p>
-        <button
-          onClick={() => navigate('/login')}
-          className="mt-6 w-full rounded-lg bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-primary-500 transition-colors"
-        >
-          Iniciar sesión
-        </button>
-      </div>
+    <div className="flex min-h-screen items-center justify-center bg-neutral-50 px-4">
+      <Card className="w-full max-w-md text-center">
+        <CardHeader>
+          {/* Ícono de tilde verde de confirmación */}
+          <CheckCircle className="mx-auto mb-2 h-14 w-14 text-green-500" />
+          <CardTitle className="text-2xl font-bold text-primary-600">
+            ¡Email confirmado!
+          </CardTitle>
+          <CardDescription className="text-base">
+            Tu cuenta está activa. Ya podés iniciar sesión y reservar canchas.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {/* Botón que lleva al login para que el usuario inicie sesión */}
+          <Button className="w-full" size="lg" onClick={() => navigate('/login')}>
+            Iniciar sesión
+          </Button>
+        </CardContent>
+      </Card>
     </div>
   )
 }
