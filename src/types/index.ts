@@ -1,13 +1,13 @@
 // Tipos e interfaces globales de TuCanchera
 // Mapean directamente a las tablas de Supabase definidas en supabase/schema.sql
 
-export type Rol = 'cliente' | 'admin'
+export type Rol = 'cliente' | 'admin' | 'superadmin'
 
 export type TipoCancha = 'futbol5' | 'futbol7' | 'padel'
 
 export type MetodoPago = 'mercadopago' | 'en_lugar'
 
-export type EstadoReserva = 'pendiente_pago' | 'confirmada' | 'cancelada_admin'
+export type EstadoReserva = 'pendiente_pago' | 'confirmada' | 'cancelada_admin' | 'cancelada_cliente'
 
 export type EstadoSlot = 'libre' | 'ocupado' | 'bloqueado'
 
@@ -16,6 +16,7 @@ export interface Profile {
   user_id: string
   nombre: string
   telefono: string | null
+  email: string | null
   rol: Rol
   creado_en: string
 }
@@ -39,6 +40,13 @@ export interface FotoComplejo {
   orden: number
 }
 
+// Franja de precio por horario en una cancha
+export interface FranjaPrecio {
+  desde: string  // "HH:MM"
+  hasta: string  // "HH:MM"
+  precio: number
+}
+
 export interface Cancha {
   id: string
   complejo_id: string
@@ -47,6 +55,7 @@ export interface Cancha {
   duracion_min: 60 | 90
   precio: number
   activa: boolean
+  franjas_precio: FranjaPrecio[] | null
 }
 
 export interface HorarioCancha {
@@ -75,7 +84,9 @@ export interface Reserva {
   hora_fin: string
   metodo_pago: MetodoPago
   estado: EstadoReserva
-  mp_payment_id: string | null
+  mp_payment_id: string | null  // reservado para futura integración MP
+  // null = sin registrar (turno futuro o no aplica), true = asistió, false = no se presentó
+  asistio: boolean | null
   creado_en: string
 }
 
@@ -83,11 +94,6 @@ export interface Slot {
   horaInicio: string
   horaFin: string
   estado: EstadoSlot
+  precio?: number  // precio efectivo del slot (de franja o base)
 }
 
-export interface CodigoInvitacion {
-  id: string
-  codigo: string
-  usado: boolean
-  creado_en: string
-}
