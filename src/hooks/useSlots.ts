@@ -1,23 +1,31 @@
 // SRP: Hook que combina horarios, reservas y bloqueos para calcular slots.
 // Delega a generarSlots() la lógica pura de cálculo.
+// Realtime: se suscribe a cambios en reservas y bloqueos para invalidar
+// la query automáticamente sin recargar la página.
 
-import { useQuery } from '@tanstack/react-query'
+import { useEffect } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { supabase } from '@/lib/supabase'
 import {
   fetchHorariosByCancha,
   fetchReservasConfirmadas,
   fetchBloqueosByCancha,
 } from '@/services/complejoService'
 import { generarSlots } from '@/utils/slots'
-import type { Slot } from '@/types'
+import type { FranjaPrecio, Slot } from '@/types'
 
 interface UseSlotsParams {
   canchaId: string | undefined
   fecha: string | undefined // "YYYY-MM-DD"
   duracionMin: number | undefined
+  precioBase?: number
+  franjas?: FranjaPrecio[] | null
 }
 
-export function useSlots({ canchaId, fecha, duracionMin }: UseSlotsParams) {
-  return useQuery<Slot[]>({
+export function useSlots({ canchaId, fecha, duracionMin, precioBase, franjas }: UseSlotsParams) {
+  const queryClient = useQueryClient()
+
+  const query = useQuery<Slot[]>({
     queryKey: ['slots', canchaId, fecha],
     queryFn: async () => {
       if (!canchaId || !fecha || !duracionMin) return []
@@ -32,8 +40,57 @@ export function useSlots({ canchaId, fecha, duracionMin }: UseSlotsParams) {
       ])
 
       const horariosDelDia = horarios.filter((h) => h.dia_semana === diaSemana)
-      return generarSlots(horariosDelDia, reservas, bloqueos, duracionMin)
+      return generarSlots(horariosDelDia, reservas, bloqueos, duracionMin, precioBase, franjas)
     },
     enabled: !!canchaId && !!fecha && !!duracionMin,
   })
+
+  // Realtime: invalida la query cuando cambian reservas o bloqueos
+  // para esta cancha+fecha específica, sin recargar toda la página.
+  useEffect(() => {
+    if (!canchaId || !fecha) return
+
+    const channelName = `slots-${canchaId}-${fecha}`
+
+    const channel = supabase
+      .channel(channelName)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'reservas',
+          filter: `cancha_id=eq.${canchaId}`,
+        },
+        (payload) => {
+          // Solo invalida si el cambio es para la fecha que estamos viendo
+          const row = (payload.new ?? payload.old) as Record<string, unknown>
+          if (row?.fecha === fecha || !row?.fecha) {
+            queryClient.invalidateQueries({ queryKey: ['slots', canchaId, fecha] })
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'bloqueos',
+          filter: `cancha_id=eq.${canchaId}`,
+        },
+        (payload) => {
+          const row = (payload.new ?? payload.old) as Record<string, unknown>
+          if (row?.fecha === fecha || !row?.fecha) {
+            queryClient.invalidateQueries({ queryKey: ['slots', canchaId, fecha] })
+          }
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [canchaId, fecha, queryClient])
+
+  return query
 }

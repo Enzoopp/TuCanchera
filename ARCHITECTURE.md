@@ -14,48 +14,39 @@
 5. [Seguridad y autenticación](#5-seguridad-y-autenticación)
 6. [Frontend — React](#6-frontend--react)
 7. [Edge Functions (Supabase)](#7-edge-functions-supabase)
-8. [Pagos — MercadoPago](#8-pagos--mercadopago)
-9. [Notificaciones — n8n](#9-notificaciones--n8n)
-10. [Email transaccional — Resend](#10-email-transaccional--resend)
-11. [Variables de entorno](#11-variables-de-entorno)
-12. [Flujos de datos principales](#12-flujos-de-datos-principales)
-13. [Deployment](#13-deployment)
-14. [Patrones y decisiones de diseño](#14-patrones-y-decisiones-de-diseño)
+8. [Email transaccional — Resend](#8-email-transaccional--resend)
+9. [Variables de entorno](#9-variables-de-entorno)
+10. [Flujos de datos principales](#10-flujos-de-datos-principales)
+11. [Deployment](#11-deployment)
+12. [Patrones y decisiones de diseño](#12-patrones-y-decisiones-de-diseño)
+13. [Integraciones pendientes](#13-integraciones-pendientes)
 
 ---
 
 ## 1. Visión general
 
-**TuCanchera** es una plataforma SaaS multi-tenant para la reserva de canchas deportivas en Argentina. Cada complejo deportivo tiene su propia URL (`tucanchera.com/:slug`) y su propio panel de administración.
+**TuCanchera** es una plataforma SaaS multi-tenant para la reserva de canchas deportivas en Argentina. Cada complejo deportivo tiene su propia URL (`tucanchera.com/c/:slug`) y su propio panel de administración.
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                       CLIENTES                          │
-│         (explorar complejos → reservar cancha)          │
-└──────────────────────┬──────────────────────────────────┘
-                       │ HTTPS
-┌──────────────────────▼──────────────────────────────────┐
-│              FRONTEND (React + Vite)                    │
-│                   Vercel CDN                            │
-└───┬──────────────────┬──────────────────────┬───────────┘
-    │                  │                      │
-    │ Supabase JS       │ Edge Functions        │ n8n webhook
-    │                  │                      │
-┌───▼──────────────┐ ┌─▼────────────────────┐ │
-│  Supabase        │ │  crear-preferencia-mp│ │
-│  - Auth          │ │  webhook-mp           │ │
-│  - PostgreSQL    │ │  limpiar-pendientes   │ │
-│  - Storage       │ └──────────┬────────────┘ │
-│  - RLS           │            │              │
-└──────────────────┘   ┌────────▼──────┐  ┌───▼──────────┐
-                       │  MercadoPago  │  │    n8n       │
-                       │  Checkout Pro │  │  Workflows   │
-                       └───────────────┘  └──────┬───────┘
-                                                 │
-                                    ┌────────────▼────────┐
-                                    │  WhatsApp / Email   │
-                                    │  (notificaciones)   │
-                                    └─────────────────────┘
+┌─────────────────────────────────────────────────────┐
+│                     CLIENTES                        │
+│       (explorar complejos → reservar cancha)        │
+└────────────────────────┬────────────────────────────┘
+                         │ HTTPS
+┌────────────────────────▼────────────────────────────┐
+│            FRONTEND (React + Vite)                  │
+│                  Vercel CDN                         │
+└──────┬─────────────────────────────┬────────────────┘
+       │                             │
+       │ Supabase JS                 │ Edge Functions
+       │                             │
+┌──────▼──────────────┐  ┌──────────▼─────────────────┐
+│  Supabase           │  │  invite-admin               │
+│  - Auth             │  │  (solo superadmins)         │
+│  - PostgreSQL       │  └────────────────────────────┘
+│  - Storage          │
+│  - RLS              │
+└─────────────────────┘
 ```
 
 ---
@@ -65,17 +56,15 @@
 | Capa | Tecnología | Versión |
 |------|-----------|---------|
 | Frontend | React + TypeScript + Vite | React 19, Vite 8 |
-| Estilos | TailwindCSS v4 + shadcn/ui | — |
-| Router | React Router v7 | — |
+| Estilos | CSS-in-JS inline + Space Grotesk / DM Sans | — |
+| Router | React Router v6 | — |
 | Estado servidor | TanStack React Query | v5 |
 | Backend-as-a-Service | Supabase | — |
 | Base de datos | PostgreSQL (via Supabase) | — |
-| Autenticación | Supabase Auth | — |
+| Autenticación | Supabase Auth (email + Google OAuth) | — |
 | Storage | Supabase Storage | — |
 | Serverless | Supabase Edge Functions (Deno) | — |
-| Pagos | MercadoPago Checkout Pro | — |
-| Notificaciones | n8n (self-hosted o cloud) | — |
-| Email transaccional | Resend + SMTP personalizado | — |
+| Email transaccional | Resend (SMTP en Supabase Auth) | — |
 | Deployment | Vercel | — |
 | Íconos | Lucide React | — |
 | Toasts | Sonner | — |
@@ -87,7 +76,8 @@
 ```
 src/
 ├── components/
-│   ├── ui/                        # Componentes shadcn/ui (Button, Card, Badge, etc.)
+│   ├── ui/                        # Componentes base (Button, Card, Badge)
+│   ├── brand/                     # Componentes de marca (Navbar, SportIcon)
 │   ├── AdminLayout.tsx            # Layout del panel admin (sidebar + outlet)
 │   ├── ConfirmacionReservaModal.tsx
 │   ├── OnboardingWizard.tsx       # Wizard para que el admin cree su complejo
@@ -105,32 +95,35 @@ src/
 │
 ├── lib/
 │   ├── supabase.ts                # Cliente Supabase (singleton)
-│   └── utils.ts                   # cn() helper para clsx + tailwind-merge
+│   └── utils.ts                   # Helpers (cn, etc.)
 │
 ├── pages/
 │   ├── Landing.tsx                # /explorar — lista todos los complejos activos
-│   ├── Complejo.tsx               # /:slug — detalle del complejo + canchas
-│   ├── Reservar.tsx               # /:slug/reservar/:canchaId — flujo de reserva
+│   ├── Complejo.tsx               # /c/:slug — detalle del complejo + canchas
+│   ├── Reservar.tsx               # /c/:slug/reservar/:canchaId — flujo de reserva
 │   ├── MisReservas.tsx            # /mis-reservas — historial del cliente
 │   ├── Login.tsx
-│   ├── Register.tsx               # Registro de clientes
-│   ├── RegisterAdmin.tsx          # Registro de admins (requiere código de invitación)
+│   ├── Register.tsx               # Registro público de clientes
 │   ├── ForgotPassword.tsx
 │   ├── ResetPassword.tsx
-│   ├── AuthCallback.tsx           # Callback de confirmación de email
+│   ├── AuthCallback.tsx           # Callback de OAuth y confirmación de email
+│   ├── superadmin/
+│   │   └── InvitarAdmin.tsx       # Panel superadmin — invitar nuevos admins
 │   └── admin/
 │       ├── Dashboard.tsx          # Resumen con métricas del día
 │       ├── GestionComplejo.tsx    # Editar info, logo y fotos del complejo
 │       ├── GestionCanchas.tsx     # CRUD de canchas y horarios
 │       ├── Bloqueos.tsx           # Gestión de bloqueos de horarios
 │       ├── Reservas.tsx           # Historial y gestión de reservas
-│       └── Estadisticas.tsx       # Gráficos de ingresos y ocupación
+│       ├── Estadisticas.tsx       # Gráficos de ingresos y ocupación
+│       └── ResumenesMensuales.tsx # Cierre mensual + PDF de resumen
 │
 ├── services/
 │   ├── complejoService.ts         # Queries públicas (complejos, canchas, fotos, horarios)
-│   ├── reservaService.ts          # Crear reserva, mis reservas, MP preference
-│   ├── adminService.ts            # Mutaciones del admin (CRUD + cancelación)
-│   └── notificacionService.ts     # Webhooks a n8n (best-effort)
+│   ├── reservaService.ts          # Crear reserva, mis reservas
+│   ├── adminService.ts            # Mutaciones del admin (CRUD, cancelación, cierre de mes)
+│   ├── profileService.ts          # Gestión de perfil de usuario
+│   └── superadminService.ts       # Invitar admins via Edge Function
 │
 ├── types/
 │   └── index.ts                   # Todos los tipos TypeScript del dominio
@@ -145,13 +138,12 @@ src/
 
 supabase/
 ├── schema.sql                     # Schema completo, RLS, triggers, funciones
+├── migrations/                    # Migraciones incrementales ordenadas por fecha
 ├── email-templates/
 │   ├── confirmacion.html          # Template de confirmación de cuenta
 │   └── reset-password.html        # Template de reset de contraseña
 └── functions/
-    ├── crear-preferencia-mp/      # Crea preferencia de pago en MercadoPago
-    ├── webhook-mp/                # Recibe IPN de MercadoPago y confirma/cancela
-    └── limpiar-pendientes/        # Cron: elimina reservas pendientes vencidas
+    └── invite-admin/              # Edge Function: invita admins (solo superadmin)
 ```
 
 ---
@@ -161,26 +153,22 @@ supabase/
 ### Tablas
 
 ```
-auth.users                         (gestionada por Supabase Auth)
+auth.users                          (gestionada por Supabase Auth)
 │
-profiles                           extiende auth.users
-│  id            uuid PK → auth.users.id
+profiles                            extiende auth.users
+│  id            uuid PK
+│  user_id       uuid FK → auth.users.id (UNIQUE)
 │  nombre        text
 │  telefono      text
-│  rol           'cliente' | 'admin'
-│  created_at    timestamptz
-│
-codigos_invitacion                 controla registro de admins
-│  id            uuid PK
-│  codigo        text UNIQUE
-│  usado         bool
+│  email         text               ← espejo de auth.users.email para queries rápidas
+│  rol           'cliente' | 'admin' | 'superadmin'
 │  creado_en     timestamptz
 │
-complejos                          entidad principal multi-tenant
+complejos                           entidad principal multi-tenant
 │  id            uuid PK
 │  admin_id      uuid FK → profiles.id
 │  nombre        text
-│  slug          text UNIQUE        ← base de la URL /:slug
+│  slug          text UNIQUE        ← base de la URL /c/:slug
 │  descripcion   text
 │  direccion     text
 │  logo_url      text
@@ -201,14 +189,14 @@ canchas
 │  duracion_min  60 | 90
 │  activa        bool
 │
-horarios_cancha                    horarios semanales de operación
+horarios_cancha                     horarios semanales de operación
 │  id            uuid PK
 │  cancha_id     uuid FK → canchas.id
 │  dia_semana    int (0=domingo … 6=sábado)
 │  hora_inicio   time
 │  hora_fin      time
 │
-bloqueos                           slots bloqueados por el admin
+bloqueos                            slots bloqueados por el admin
 │  id            uuid PK
 │  cancha_id     uuid FK → canchas.id
 │  fecha         date
@@ -216,48 +204,64 @@ bloqueos                           slots bloqueados por el admin
 │  motivo        text
 │
 reservas
+│  id            uuid PK
+│  cancha_id     uuid FK → canchas.id
+│  cliente_id    uuid FK → profiles.id
+│  fecha         date
+│  hora_inicio   time
+│  hora_fin      time
+│  estado        'confirmada' | 'cancelada_admin'
+│  metodo_pago   'en_lugar'         ← 'mercadopago' reservado para futura integración
+│  mp_payment_id text               ← reservado para futura integración MP
+│  asistio       bool | null        ← null=sin registrar, true=asistió, false=no
+│  creado_en     timestamptz
+│
+│  UNIQUE INDEX (cancha_id, fecha, hora_inicio) WHERE estado != 'cancelada_admin'
+│  └── previene double-booking (race condition safe)
+│
+resumen_meses                       KPIs mensuales (se crea al cerrar un mes)
    id            uuid PK
-   cancha_id     uuid FK → canchas.id
-   cliente_id    uuid FK → profiles.id
-   fecha         date
-   hora_inicio   time
-   hora_fin      time
-   estado        'pendiente_pago' | 'confirmada' | 'cancelada_admin'
-   metodo_pago   'mercadopago' | 'en_lugar'
-   mp_payment_id text               ← seteado por webhook de MercadoPago
-   created_at    timestamptz
-```
-
-### Trigger: `handle_new_user`
-
-Se ejecuta `AFTER INSERT ON auth.users`. Crea automáticamente un registro en `profiles` con el nombre, teléfono y rol que vienen en `raw_user_meta_data`.
-
-```sql
-CREATE OR REPLACE FUNCTION handle_new_user()
-RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER AS $$
-BEGIN
-  INSERT INTO profiles (id, nombre, telefono, rol)
-  VALUES (
-    NEW.id,
-    NEW.raw_user_meta_data->>'nombre',
-    NEW.raw_user_meta_data->>'telefono',
-    COALESCE(NEW.raw_user_meta_data->>'rol', 'cliente')
-  );
-  RETURN NEW;
-END;
-$$;
+   complejo_id   uuid FK → complejos.id
+   anio          int
+   mes           int (1–12)
+   total_reservas int
+   confirmadas   int
+   canceladas    int
+   asistieron    int
+   no_asistieron int
+   ingresos      numeric
+   cerrado_en    timestamptz
+   UNIQUE (complejo_id, anio, mes)
 ```
 
 ### Función: `get_my_rol()`
 
-Función `SECURITY DEFINER` usada por las políticas RLS para evitar recursión infinita al leer el rol del usuario actual.
+Función `SECURITY DEFINER` usada por las políticas RLS para leer el rol del usuario actual sin causar recursión infinita (las políticas que consultan `profiles` necesitan esta función para evitar que RLS se aplique sobre sí mismo).
 
 ```sql
 CREATE OR REPLACE FUNCTION get_my_rol()
-RETURNS text LANGUAGE sql SECURITY DEFINER AS $$
-  SELECT rol FROM profiles WHERE id = auth.uid();
+RETURNS text LANGUAGE sql STABLE SECURITY DEFINER AS $$
+  SELECT rol FROM profiles WHERE user_id = auth.uid();
 $$;
 ```
+
+### Trigger: `handle_new_user`
+
+Se ejecuta `AFTER INSERT ON auth.users`. Crea automáticamente un perfil en la tabla `profiles`.
+
+**Seguridad anti-privilege-escalation:** el rol del metadata solo se respeta si el usuario fue invitado formalmente (la columna nativa `auth.users.invited_at` viene seteada por `inviteUserByEmail()`). Un signup normal siempre obtiene `rol='cliente'` sin importar lo que pase en el metadata.
+
+```sql
+IF NEW.invited_at IS NOT NULL THEN
+  v_rol := COALESCE(NEW.raw_user_meta_data->>'rol', 'cliente');
+ELSE
+  v_rol := 'cliente';   -- nunca confiar en metadata de signup público
+END IF;
+```
+
+### Limpieza automática (pg_cron)
+
+Un job semanal (lunes 03:00 UTC) borra reservas con más de 60 días de antigüedad. El admin puede adelantarse usando el **cierre de mes**: genera el PDF, guarda KPIs en `resumen_meses`, y elimina las reservas del período seleccionado de forma permanente.
 
 ---
 
@@ -269,26 +273,41 @@ Todas las tablas tienen RLS activado. Resumen de políticas:
 
 | Tabla | SELECT | INSERT | UPDATE | DELETE |
 |-------|--------|--------|--------|--------|
-| profiles | Propio (`id = auth.uid()`) | — | Propio | — |
-| complejos | Público | Admin (rol=admin) | Admin dueño | — |
+| profiles | Propio + superadmin | Trigger | Propio | — |
+| complejos | Público | Admin dueño | Admin dueño | — |
 | canchas | Público | Admin dueño | Admin dueño | Admin dueño |
 | horarios_cancha | Público | Admin dueño | Admin dueño | Admin dueño |
 | fotos_complejo | Público | Admin dueño | Admin dueño | Admin dueño |
-| bloqueos | Admin dueño | Admin dueño | Admin dueño | Admin dueño |
-| reservas | Propio + Admin dueño | Autenticado | Admin dueño | — |
+| bloqueos | Admin dueño | Admin dueño | — | Admin dueño |
+| reservas | Público (solo estado)\* + Propio + Admin dueño | Cliente autenticado | Admin dueño | Admin dueño |
+| resumen_meses | Admin dueño + superadmin | Admin dueño | Admin dueño | — |
 
-**Nota:** Las reservas permiten SELECT a cualquier usuario autenticado si `estado IN ('confirmada', 'pendiente_pago')` para que los slots aparezcan como ocupados para otros clientes.
+\* `reservas` tiene una política pública de SELECT restringida a `estado IN ('confirmada', 'pendiente_pago')` para que los slots aparezcan como ocupados sin exponer datos del cliente.
 
-### Registro de admins controlado
+### Alta de admins — flujo de invitación
 
-El registro como admin requiere un `codigo_invitacion` válido y no usado. Esto evita que cualquiera se registre como dueño de complejo.
+Los admins son invitados exclusivamente por el superadmin desde el panel `/superadmin`. El flujo:
+
+```
+Superadmin → invita email desde panel
+  │
+superadminService → supabase.functions.invoke('invite-admin', { email, nombre })
+  │
+Edge Function invite-admin
+  ├── verifica JWT del caller (debe ser superadmin en profiles)
+  ├── adminClient.auth.admin.inviteUserByEmail(email, { data: { nombre, rol: 'admin' } })
+  │     └── Supabase setea auth.users.invited_at (columna nativa)
+  │
+  └── Email de invitación → usuario acepta → trigger handle_new_user
+        └── invited_at IS NOT NULL → rol='admin' aceptado
+```
+
+No hay signup público de admins. No hay códigos de invitación.
 
 ### API Keys
 
 - **Anon key**: pública, segura gracias a RLS
 - **Service Role key**: solo en Edge Functions (nunca en el frontend)
-- **MP Access Token**: solo en Edge Functions
-- **Resend API Key**: solo en Edge Functions / variables de servidor
 
 ---
 
@@ -297,24 +316,25 @@ El registro como admin requiere un `codigo_invitacion` válido y no usado. Esto 
 ### Routing
 
 ```
-/                         → RootRedirect (login | /admin/dashboard | /explorar)
+/                          → RootRedirect (según rol: cliente→/explorar, admin→/admin/dashboard, superadmin→/superadmin)
 /login
-/register
-/register-admin
+/register                  → solo clientes
 /forgot-password
 /reset-password
-/auth/callback            → AuthCallback (maneja confirmación de email)
-/explorar                 → Landing (pública)
-/mis-reservas             → MisReservas (requiere auth)
-/admin/                   → AdminLayout (requiere rol=admin)
+/auth/callback             → AuthCallback (OAuth + confirmación de email)
+/explorar                  → Landing (pública)
+/mis-reservas              → MisReservas (requiere auth, rol=cliente)
+/superadmin                → InvitarAdmin (requiere rol=superadmin)
+/admin/                    → AdminLayout (requiere rol=admin)
   /admin/dashboard
   /admin/complejo
   /admin/canchas
   /admin/bloqueos
   /admin/reservas
   /admin/estadisticas
-/:slug                    → Complejo (pública, TenantContext)
-/:slug/reservar/:canchaId → Reservar (requiere auth)
+  /admin/resumenes-mensuales
+/c/:slug                   → Complejo (pública, TenantContext)
+/c/:slug/reservar/:canchaId → Reservar (requiere auth, rol=cliente)
 ```
 
 ### Contextos
@@ -323,7 +343,7 @@ El registro como admin requiere un `codigo_invitacion` válido y no usado. Esto 
 
 Gestiona sesión, perfil y rol. Soluciona el deadlock de Supabase Auth separando el fetch del perfil en un `useEffect([user?.id])` independiente al `onAuthStateChange`.
 
-**TenantContext** — scope de rutas `/:slug/*`
+**TenantContext** — scope de rutas `/c/:slug/*`
 
 Resuelve el complejo a partir del slug en la URL y lo provee a las páginas de reserva.
 
@@ -342,167 +362,46 @@ No tiene efectos secundarios — es completamente testeable en aislamiento.
 
 Todas las llamadas a Supabase están encapsuladas en `src/services/`. Los componentes y hooks nunca importan `supabase` directamente; solo llaman funciones del service layer. Esto facilita el testing y el cambio de proveedor.
 
+### Cierre mensual
+
+El admin cierra un mes en tres pasos dentro de la UI:
+1. `fetchReservasMes()` — carga el detalle del mes
+2. Generación del PDF en el frontend (jsPDF) con el detalle completo
+3. `cerrarMes()` — guarda KPIs en `resumen_meses` + DELETE permanente de las reservas
+
+Después del paso 3 los datos individuales ya no existen; solo quedan los 10 números de KPI.
+
 ---
 
 ## 7. Edge Functions (Supabase)
 
-Las Edge Functions corren en Deno sobre la infraestructura de Supabase (cerca de la base de datos). No hay servidor Node propio.
+Las Edge Functions corren en Deno sobre la infraestructura de Supabase. Solo hay una función activa:
 
-### `crear-preferencia-mp`
+### `invite-admin`
 
-**Trigger:** llamada desde el frontend al confirmar una reserva con MercadoPago.
+**Trigger:** llamada desde el panel superadmin al invitar un nuevo admin.
 
 ```
-Frontend → POST /functions/v1/crear-preferencia-mp
-           { canchaId, clienteId, fecha, horaInicio, horaFin }
+Superadmin → POST /functions/v1/invite-admin
+             { email, nombre }
 
 Pasos:
-  1. Verificar JWT del usuario (Supabase Auth)
-  2. Leer cancha → obtener precio y nombre
-  3. Verificar que el slot no esté ocupado (lock optimista)
-  4. INSERT reservas con estado='pendiente_pago'
-  5. POST https://api.mercadopago.com/checkout/preferences
-       { items, external_reference: reservaId, back_urls, notification_url }
-  6. Retornar { url: init_point, reservaId }
-
-Rollback: si MP falla → DELETE la reserva creada
-```
-
-### `webhook-mp`
-
-**Trigger:** IPN de MercadoPago (HTTP POST al confirmar/rechazar pago).
-
-```
-MercadoPago → POST /functions/v1/webhook-mp
-              { type: 'payment', data: { id: paymentId } }
-
-Pasos:
-  1. GET https://api.mercadopago.com/v1/payments/:id
-  2. Leer external_reference → reservaId
-  3. Si status = 'approved'  → UPDATE reservas SET estado='confirmada', mp_payment_id
-  4. Si status = 'rejected'  → DELETE reservas (libera slot)
-  5. Si status = 'pending'   → no hacer nada (esperar próximo webhook)
-  6. Disparar webhook a n8n (best-effort)
-```
-
-### `limpiar-pendientes`
-
-**Trigger:** cron cada 5 minutos (Supabase Cron Jobs).
-
-```
-Pasos:
-  1. SELECT reservas WHERE estado='pendiente_pago'
-                       AND created_at < NOW() - INTERVAL '15 minutes'
-  2. DELETE esas reservas → libera los slots
-  3. Opcional: notificar al cliente por email (Resend, best-effort)
+  1. Verificar JWT del caller (auth.getUser())
+  2. Leer profiles → comprobar rol = 'superadmin'
+  3. adminClient.auth.admin.inviteUserByEmail(email, { data: { nombre, rol: 'admin' } })
+     └── Supabase envía email de invitación y setea invited_at en auth.users
+  4. Retornar { ok: true, userId }
 ```
 
 ---
 
-## 8. Pagos — MercadoPago
+## 8. Email transaccional — Resend
 
-### Flujo completo
-
-```
-1. Cliente selecciona slot y hace clic en "Pagar con MercadoPago"
-   │
-2. Frontend llama a Edge Function crear-preferencia-mp
-   │  La función crea la reserva (pendiente_pago) y genera una preferencia en MP
-   │
-3. Frontend redirige al cliente a init_point (Checkout Pro de MP)
-   │
-4. Cliente completa el pago en la plataforma de MP
-   │
-5. MercadoPago envía IPN al webhook-mp Edge Function
-   │
-6a. Pago aprobado → reserva.estado = 'confirmada', mp_payment_id guardado
-6b. Pago rechazado → reserva eliminada (slot liberado)
-6c. Pago pendiente → sin cambios (el cron limpiará en 15 min si no se confirma)
-   │
-7. n8n recibe evento y envía notificación al cliente (WhatsApp/email)
-```
-
-### Variables necesarias en Edge Functions
-
-```
-MP_ACCESS_TOKEN      Token de producción de MercadoPago
-MP_NOTIFICATION_URL  URL pública del webhook (https://<proyecto>.supabase.co/functions/v1/webhook-mp)
-```
-
-### Configuración en MercadoPago
-
-- Back URLs:
-  - success: `https://tucanchera.com/mis-reservas?pago=ok`
-  - failure: `https://tucanchera.com/mis-reservas?pago=error`
-  - pending: `https://tucanchera.com/mis-reservas?pago=pendiente`
-- Notification URL (IPN): `https://<proyecto>.supabase.co/functions/v1/webhook-mp`
-
----
-
-## 9. Notificaciones — n8n
-
-n8n es el motor de automatización que recibe eventos del sistema y envía mensajes a clientes y admins.
-
-### Arquitectura de notificaciones
-
-```
-Frontend / Edge Function
-        │
-        │ POST (best-effort, falla silenciosa)
-        ▼
-  n8n Webhook endpoint
-        │
-        ├── reserva_creada        → WhatsApp al cliente (confirmación)
-        ├── reserva_confirmada    → WhatsApp al cliente + email
-        ├── pago_aprobado         → WhatsApp al cliente
-        ├── pago_rechazado        → WhatsApp al cliente
-        ├── cancelacion_admin     → WhatsApp + email al cliente
-        └── recordatorio_24hs     → WhatsApp al cliente (cron nocturno)
-```
-
-### Integración en el código
-
-```typescript
-// src/services/notificacionService.ts
-const n8nBase = import.meta.env.VITE_N8N_WEBHOOK_BASE_URL
-
-// adminService.ts — al cancelar una reserva:
-await fetch(`${n8nBase}/cancelacion-admin`, {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    cliente_nombre, cliente_telefono, cliente_email,
-    cancha_nombre, complejo_nombre, fecha, hora_inicio, hora_fin,
-  }),
-})
-// Si falla → console.warn, no interrumpe el flujo principal
-```
-
-### Workflows n8n sugeridos
-
-| Workflow | Trigger | Canal |
-|----------|---------|-------|
-| Nueva reserva | Webhook `/reserva-creada` | WhatsApp (Twilio/WaPi) |
-| Pago aprobado | Webhook `/pago-aprobado` | WhatsApp + Email |
-| Pago rechazado | Webhook `/pago-rechazado` | WhatsApp |
-| Cancelación admin | Webhook `/cancelacion-admin` | WhatsApp + Email |
-| Recordatorio | Cron 20:00 diario | WhatsApp |
-
-### Variables de entorno para n8n
-
-```
-VITE_N8N_WEBHOOK_BASE_URL=https://n8n.tucanchera.com/webhook
-```
-
----
-
-## 10. Email transaccional — Resend
-
-Resend se usa para emails transaccionales (confirmación de cuenta, reset de contraseña, notificaciones opcionales).
+Resend se usa para emails transaccionales (confirmación de cuenta, reset de contraseña).
 
 ### Configuración
 
-- **Servicio SMTP personalizado** en Supabase Auth → `smtp.resend.com:465`
+- **SMTP personalizado** en Supabase Auth → `smtp.resend.com:465`
 - **Usuario SMTP:** `resend`
 - **Password:** API Key de Resend
 - **Remitente:** `noreply@tucanchera.com` (dominio verificado en Resend)
@@ -520,97 +419,65 @@ Los templates HTML están en `supabase/email-templates/`:
 
 ---
 
-## 11. Variables de entorno
+## 9. Variables de entorno
 
 ### Frontend (`.env.local`)
 
 ```bash
-# Supabase
+# Supabase (obligatorias)
 VITE_SUPABASE_URL=https://<proyecto>.supabase.co
 VITE_SUPABASE_ANON_KEY=<anon-key-publica>
 
-# n8n (opcional — sin esta variable las notificaciones se omiten silenciosamente)
-VITE_N8N_WEBHOOK_BASE_URL=https://n8n.tucanchera.com/webhook
+# Feature flags (opcionales)
+VITE_MP_ENABLED=false   # Habilita botón MercadoPago cuando se implemente
 ```
 
 ### Edge Functions (Supabase Secrets)
 
 ```bash
+SUPABASE_URL=https://<proyecto>.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=<service-role-key>   # Bypassea RLS
-MP_ACCESS_TOKEN=<token-produccion-mp>           # MercadoPago
-MP_NOTIFICATION_URL=https://...                 # URL del webhook de MP
-RESEND_API_KEY=<api-key>                        # Solo si se usan emails desde Edge Functions
+SUPABASE_ANON_KEY=<anon-key>
+APP_URL=https://tucanchera.vercel.app          # Usada en redirectTo del invite
 ```
 
 ### Vercel (variables de producción)
 
-Mismas variables que `.env.local` más cualquier flag de feature.
+Mismas variables VITE_* que `.env.local` configuradas en el Dashboard de Vercel.
 
 ---
 
-## 12. Flujos de datos principales
+## 10. Flujos de datos principales
 
-### A. Reserva con MercadoPago
+### A. Reserva en el lugar
 
 ```
 Cliente
-  │ 1. Navega a /:slug/reservar/:canchaId
+  │ 1. Navega a /c/:slug/reservar/:canchaId
   │ 2. useSlots() carga disponibilidad
   │    ├── fetchHorariosByCancha(canchaId)
-  │    ├── fetchReservasConfirmadas(canchaId, fecha)   ← incluye pendiente_pago
+  │    ├── fetchReservasConfirmadas(canchaId, fecha)
   │    └── fetchBloqueosByCancha(canchaId, fecha)
   │    └── generarSlots() → Slot[]
-  │ 3. Selecciona slot libre
-  │ 4. Clic "Pagar con MercadoPago"
+  │ 3. Selecciona slot libre → abre ConfirmacionReservaModal
+  │ 4. Clic "Reservar y pagar en el lugar"
   │
-  ├── POST /functions/v1/crear-preferencia-mp
-  │     ├── INSERT reservas (estado=pendiente_pago)
-  │     ├── POST api.mercadopago.com/checkout/preferences
-  │     └── return { url, reservaId }
-  │
-  │ 5. Redirect a Checkout Pro (MercadoPago)
-  │ 6. Paga
-  │
-MercadoPago
-  ├── POST /functions/v1/webhook-mp
-  │     ├── GET api.mercadopago.com/v1/payments/:id
-  │     ├── UPDATE reservas SET estado='confirmada'
-  │     └── POST n8n /pago-aprobado (best-effort)
-  │
-n8n
-  └── Envía WhatsApp al cliente
+crearReservaEnLugar()
+  └── INSERT reservas (estado='confirmada', metodo_pago='en_lugar')
+        └── Confirmación en modal → opción de ver mis reservas
 ```
 
-### B. Reserva en el lugar
-
-```
-Cliente
-  │ 1-3. Igual que arriba
-  │ 4. Selecciona "Pagar en el lugar"
-  └── crearReservaEnLugar()
-        └── INSERT reservas (estado='confirmada', metodo_pago='en_lugar')
-              └── Redirige a /mis-reservas
-```
-
-### C. Cancelación por admin
+### B. Cancelación por admin
 
 ```
 Admin en /admin/reservas
   │ 1. Clic "Cancelar"
   │
-adminService.cancelarReservaAdmin(id)
-  ├── SELECT reserva + joins (profiles, canchas, complejos)
-  ├── UPDATE reservas SET estado='cancelada_admin'
-  └── POST n8n /cancelacion-admin (best-effort)
-        ├── cliente_nombre, cliente_telefono, cliente_email
-        └── cancha_nombre, complejo_nombre, fecha, hora_inicio, hora_fin
-
-n8n
-  ├── WhatsApp al cliente
-  └── Email al cliente (via Resend)
+cancelarReservaAdmin(id)
+  └── UPDATE reservas SET estado='cancelada_admin'
 ```
 
-### D. Login y resolución de rol
+### C. Login y resolución de rol
 
 ```
 Usuario ingresa credenciales en /login
@@ -622,17 +489,36 @@ AuthContext.signIn()
           │
           useEffect([user?.id])
             └── fetchProfile(user.id)   ← FUERA del auth lock
-                  └── SELECT profiles WHERE id = user.id
+                  └── SELECT profiles WHERE user_id = user.id
                         └── setProfile() + setLoading(false)
                               │
                               RootRedirect (rol)
-                                ├── rol='admin'   → /admin/dashboard
-                                └── rol='cliente' → /explorar
+                                ├── rol='superadmin' → /superadmin
+                                ├── rol='admin'      → /admin/dashboard
+                                └── rol='cliente'    → /explorar
+```
+
+### D. Alta de admin
+
+```
+Superadmin en /superadmin
+  │
+superadminService.invitarAdmin({ email, nombre })
+  │
+  Edge Function invite-admin
+    └── inviteUserByEmail() → email al nuevo admin
+          │
+          Admin acepta invite → setea password
+            │
+            Trigger handle_new_user
+              └── invited_at IS NOT NULL → perfil con rol='admin'
+                    │
+                    Login → /admin/dashboard → OnboardingWizard
 ```
 
 ---
 
-## 13. Deployment
+## 11. Deployment
 
 ### Infraestructura
 
@@ -651,12 +537,9 @@ Repositorio GitHub (main + develop)
 
 Supabase (BaaS)
   ├── Base de datos PostgreSQL (managed)
-  ├── Auth (managed)
+  ├── Auth (managed) + Google OAuth
   ├── Storage (managed)
-  └── Edge Functions (deploy via Supabase CLI o GitHub Action)
-
-n8n
-  └── Cloud o VPS propio (accesible desde internet para recibir webhooks)
+  └── Edge Functions (deploy via Supabase CLI)
 ```
 
 ### Ramas de trabajo
@@ -677,10 +560,12 @@ npm run dev
 # Build de producción
 npm run build
 
+# Lint + tipo check
+npm run lint
+npx tsc --noEmit
+
 # Deploy de Edge Functions
-supabase functions deploy crear-preferencia-mp
-supabase functions deploy webhook-mp
-supabase functions deploy limpiar-pendientes
+supabase functions deploy invite-admin --project-ref <TU_REF>
 
 # Aplicar migración SQL
 supabase db push
@@ -688,7 +573,7 @@ supabase db push
 
 ---
 
-## 14. Patrones y decisiones de diseño
+## 12. Patrones y decisiones de diseño
 
 ### Singleton Pattern
 `supabase.ts`, `AuthContext`, `TenantContext` — una sola instancia compartida en toda la app.
@@ -707,14 +592,37 @@ Toda la data remota pasa por React Query. Los `queryKey` están diseñados para 
 ### RLS como segunda línea de defensa
 Aunque el frontend protege rutas por rol, la base de datos tiene sus propias políticas RLS. Un token comprometido no puede leer datos de otro complejo.
 
-### Best-effort notifications
-Los webhooks a n8n y los disparos a Resend nunca bloquean el flujo principal. Si fallan, se loguea un warning pero la reserva/cancelación se procesa igualmente.
-
 ### Evitar deadlock de Supabase Auth
 `onAuthStateChange` corre dentro del lock interno de Supabase. Llamar queries de Supabase dentro de ese callback causa un deadlock de ~5s. La solución: setear solo `user` en el callback, y fetchear el `profile` en un `useEffect([user?.id])` separado que corre fuera del lock.
 
 ### Multi-tenant por slug
-Cada complejo tiene un `slug` único (URL-friendly). Las rutas `/:slug/*` resuelven el complejo via `TenantContext`. No hay subdominios — el slug vive en el path.
+Cada complejo tiene un `slug` único (URL-friendly). Las rutas `/c/:slug/*` resuelven el complejo via `TenantContext`. No hay subdominios — el slug vive en el path.
 
-### Reservas pendientes como lock optimista
-Cuando un cliente inicia el pago, la reserva se crea con `estado='pendiente_pago'`. Esto bloquea el slot para otros usuarios durante el proceso de pago. El cron `limpiar-pendientes` libera slots de reservas pendientes mayores a 15 minutos.
+### Hard delete + resumen mensual
+En lugar de soft-delete con `archivada=true`, el sistema hace hard DELETE de reservas al cerrar el mes. Los KPIs se preservan en `resumen_meses` (10 números por mes). Esto mantiene la base de datos liviana sin perder el histórico de negocio.
+
+### Anti privilege-escalation en trigger
+El trigger `handle_new_user` ignora el `rol` del metadata a menos que `auth.users.invited_at IS NOT NULL` (seteado por `inviteUserByEmail`). Un atacante que haga `signUp({ data: { rol: 'admin' } })` siempre obtiene `'cliente'`.
+
+---
+
+## 13. Integraciones pendientes
+
+Las siguientes integraciones están diseñadas en la arquitectura pero no implementadas todavía:
+
+### Pagos — MercadoPago
+
+El modal de reserva (`ConfirmacionReservaModal`) ya tiene la estructura para mostrar el botón "Pagar con MercadoPago" cuando `VITE_MP_ENABLED=true`. Cuando se implemente se necesitará:
+
+- Edge Function `crear-preferencia-mp`: crea la preferencia en la API de MP y reserva el slot en estado `pendiente_pago`
+- Edge Function `webhook-mp`: recibe IPN de MP, confirma o libera el slot
+- Edge Function `limpiar-pendientes` (o pg_cron): limpia slots `pendiente_pago` expirados
+
+Variables de entorno adicionales: `MP_ACCESS_TOKEN`, `MP_NOTIFICATION_URL`.
+
+### Notificaciones
+
+No hay sistema de notificaciones activo. Cuando se implemente, las opciones naturales son:
+- WhatsApp via Twilio o WaPi.io
+- Email transaccional via Resend (ya configurado para auth, extensible)
+- Automatización con n8n o similar
