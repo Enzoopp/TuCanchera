@@ -1,837 +1,393 @@
-// SRP: Página de reserva con grid semanal (7 días × slots/hora).
-// Diseño replicado de ReservarPage.jsx (pills por slot: libre/ocupado/bloqueado,
-// hover "Reservar", modal de confirmación de pago).
-// Preserva la lógica existente: useSlots + ConfirmacionReservaModal.
+// ============================================================
+// RESERVAR.TSX  (ruta: /:slug/reservar/:canchaId)
+// Página de reserva con un calendario semanal de slots.
+// Muestra todos los turnos disponibles de una cancha para la semana
+// actual. Cada slot puede estar: libre (verde), ocupado (rojo)
+// o bloqueado (gris).
+//
+// Al clickear un slot libre:
+//   - Si el usuario NO está logueado → redirige a /login
+//   - Si está logueado → abre el modal de confirmación
+//
+// Diseño responsive:
+//   - Desktop: 7 columnas (una por día de la semana)
+//   - Mobile: 1 día a la vez con flechas para navegar
+// ============================================================
 
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/context/AuthContext'
 import { useTenant } from '@/context/TenantContext'
 import { useSlots } from '@/hooks/useSlots'
-import { useDocumentMeta } from '@/hooks/useDocumentMeta'
 import { fetchCanchaById } from '@/services/reservaService'
-import Navbar from '@/components/brand/Navbar'
-import SportIcon, { sportPalette, sportLabel } from '@/components/brand/SportIcon'
+import {
+  generarDiasSemana,      // genera un array de 7 fechas a partir de una fecha base
+  formatearFechaCorta,    // ej: "12 may"
+  formatearFechaLarga,    // ej: "lunes 12 de mayo"
+  formatearDiaSemanaCorto,// ej: "LUN"
+  formatearFechaISO,      // convierte Date → "YYYY-MM-DD"
+  esFechaPasada,          // true si la fecha es anterior a hoy
+  esHoy,                  // true si la fecha es hoy
+} from '@/utils/fechas'
+import { tipoCanchaLabels } from '@/utils/canchaLabels'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Skeleton } from '@/components/ui/skeleton'
+import { ChevronLeft, ChevronRight, ArrowLeft } from 'lucide-react'
 import ConfirmacionReservaModal from '@/components/ConfirmacionReservaModal'
-import { Home, ChevronRight, ChevronLeft, Clock } from 'lucide-react'
-import { addDays, startOfWeek, isSameDay, differenceInCalendarDays, startOfDay } from 'date-fns'
-import type { FranjaPrecio, Slot } from '@/types'
-
-const DAY_LABELS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
-const MONTH_NAMES = [
-  'enero',
-  'febrero',
-  'marzo',
-  'abril',
-  'mayo',
-  'junio',
-  'julio',
-  'agosto',
-  'septiembre',
-  'octubre',
-  'noviembre',
-  'diciembre',
-]
-
-function formatYMD(d: Date) {
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const dd = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${dd}`
-}
-
-type SlotWithFecha = { fecha: string; slot: Slot }
+import type { Slot } from '@/types'
 
 export default function Reservar() {
+  // useParams: extrae :slug y :canchaId de la URL
   const { slug, canchaId } = useParams<{ slug: string; canchaId: string }>()
   const navigate = useNavigate()
+
+  // useAuth: para saber si el usuario está logueado antes de abrir el modal
   const { user } = useAuth()
+
+  // useTenant: para mostrar el nombre del complejo en el link "Volver a X"
   const { complejo } = useTenant()
 
-  const [weekOffset, setWeekOffset] = useState(0)
-  const [mobileDay, setMobileDay] = useState(0)
-  const [selected, setSelected] = useState<SlotWithFecha | null>(null)
+  // ── Estados de la UI ─────────────────────────────────────────
+  // semanaBase: fecha de inicio de la semana visible en desktop
+  const [semanaBase, setSemanaBase] = useState(() => new Date())
+  // diaMobile: día actual en la vista móvil (un día a la vez)
+  const [diaMobile, setDiaMobile] = useState(() => new Date())
+  // slotSeleccionado: cuando el usuario clickea un slot libre, se guarda
+  // acá para pasárselo al modal de confirmación
+  const [slotSeleccionado, setSlotSeleccionado] = useState<{
+    fecha: string   // formato "YYYY-MM-DD"
+    slot: Slot      // objeto con horaInicio, horaFin y estado
+  } | null>(null)
 
+  // ── Datos de la cancha ───────────────────────────────────────
+  // Se busca la cancha por su ID para mostrar nombre, tipo, precio y duración
   const { data: cancha, isLoading: loadingCancha } = useQuery({
     queryKey: ['cancha', canchaId],
     queryFn: () => fetchCanchaById(canchaId!),
-    enabled: !!canchaId,
+    enabled: !!canchaId,  // no ejecutar si canchaId no está en la URL
   })
 
-  // Calcula el lunes base de la semana mostrada
-  const weekDates = useMemo(() => {
-    const today = new Date()
-    const monday = startOfWeek(today, { weekStartsOn: 1 })
-    const shifted = addDays(monday, weekOffset * 7)
-    return Array.from({ length: 7 }, (_, i) => addDays(shifted, i))
-  }, [weekOffset])
+  // dias: array de 7 Date objects (lun–dom) de la semana actual
+  const dias = generarDiasSemana(semanaBase)
 
-  const weekLabel = useMemo(() => {
-    const first = weekDates[0]
-    const last = weekDates[6]
-    return `Semana del ${first.getDate()} al ${last.getDate()} de ${MONTH_NAMES[last.getMonth()]}`
-  }, [weekDates])
-
+  // ── Handler: click en un slot ────────────────────────────────
   function handleSlotClick(fecha: string, slot: Slot) {
+    // Solo actuar si el slot está libre
     if (slot.estado !== 'libre') return
+
+    // Si no está logueado, redirigir al login guardando la ruta actual
+    // para volver después de autenticarse
     if (!user) {
       navigate('/login', {
         state: { from: { pathname: `/${slug}/reservar/${canchaId}` } },
       })
       return
     }
-    setSelected({ fecha, slot })
+
+    // Si está logueado, guardamos el slot para mostrar el modal
+    setSlotSeleccionado({ fecha, slot })
   }
 
-  useDocumentMeta({
-    title: cancha && complejo
-      ? `Reservar ${cancha.nombre} en ${complejo.nombre} | TuCanchera`
-      : 'Reservar cancha | TuCanchera',
-    description: cancha && complejo
-      ? `Elegí un horario para ${cancha.nombre} en ${complejo.nombre}. Reserva online sin llamadas.`
-      : 'Reservá tu cancha de fútbol o pádel online.',
-    canonical: window.location.href,
-  })
+  // ── Pantalla de carga ────────────────────────────────────────
+  if (loadingCancha) {
+    return <ReservarSkeleton />
+  }
 
-  if (loadingCancha) return <ReservarSkeleton />
-
+  // ── Cancha no encontrada ─────────────────────────────────────
   if (!cancha) {
     return (
-      <div style={{ background: '#f8fafc', minHeight: '100vh', fontFamily: "'DM Sans', sans-serif" }}>
-        <Navbar />
-        <div style={{ maxWidth: 600, margin: '80px auto', padding: 24, textAlign: 'center' }}>
-          <h1
-            style={{
-              fontFamily: "'Space Grotesk', sans-serif",
-              fontSize: '1.5rem',
-              fontWeight: 800,
-              color: '#0f172a',
-              marginBottom: 16,
-            }}
-          >
-            Cancha no encontrada
-          </h1>
-          <Link
-            to={`/${slug}`}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '10px 18px',
-              borderRadius: 10,
-              background: '#2563eb',
-              color: 'white',
-              textDecoration: 'none',
-              fontWeight: 700,
-            }}
-          >
-            Volver al complejo
+      <div className="flex min-h-screen items-center justify-center bg-neutral-50 px-4">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold text-neutral-900">Cancha no encontrada</h1>
+          <Link to={`/${slug}`} className="mt-4 inline-block">
+            <Button variant="outline">Volver al complejo</Button>
           </Link>
         </div>
       </div>
     )
   }
 
-  const sport = sportLabel(cancha.tipo)
-  const pal = sportPalette(sport)
-
   return (
-    <div style={{ background: '#f8fafc', minHeight: '100vh', fontFamily: "'DM Sans', sans-serif" }}>
-      <Navbar />
+    <div className="min-h-screen bg-neutral-50">
 
-      <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 20px 60px' }}>
-        {/* Breadcrumb */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            marginBottom: 16,
-            fontSize: '0.82rem',
-            color: '#64748b',
-            flexWrap: 'wrap',
-          }}
-        >
-          <Link
-            to="/explorar"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 4,
-              color: '#64748b',
-              textDecoration: 'none',
-            }}
-          >
-            <Home size={14} /> Inicio
+      {/* ── Header: nombre de la cancha + info ── */}
+      <header className="border-b bg-white">
+        <div className="mx-auto max-w-5xl px-4 py-4">
+          {/* Link para volver al complejo */}
+          <Link to={`/${slug}`} className="inline-flex items-center gap-1 text-sm text-neutral-500 hover:text-neutral-900">
+            <ArrowLeft className="h-4 w-4" />
+            Volver a {complejo?.nombre}
           </Link>
-          <ChevronRight size={13} color="#cbd5e1" />
-          <Link
-            to={`/${slug}`}
-            style={{
-              color: '#64748b',
-              textDecoration: 'none',
-            }}
-          >
-            {complejo?.nombre ?? 'Complejo'}
-          </Link>
-          <ChevronRight size={13} color="#cbd5e1" />
-          <span style={{ color: '#0f172a', fontWeight: 600 }}>{cancha.nombre}</span>
-        </div>
-
-        {/* Court info card */}
-        <div
-          style={{
-            background: 'white',
-            borderRadius: 14,
-            padding: '18px 22px',
-            borderLeft: '4px solid #2563eb',
-            boxShadow: '0 1px 8px rgba(0,0,0,0.05)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 18,
-            flexWrap: 'wrap',
-            marginBottom: 28,
-          }}
-        >
-          <div
-            style={{
-              width: 48,
-              height: 48,
-              borderRadius: 12,
-              background: 'linear-gradient(135deg, #dbeafe, #bfdbfe)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
-              color: pal.text,
-            }}
-          >
-            <SportIcon sport={sport} size={24} color={pal.text} />
-          </div>
-          <div style={{ flex: 1, minWidth: 180 }}>
-            <h1
-              style={{
-                fontFamily: "'Space Grotesk', sans-serif",
-                fontSize: '1.25rem',
-                fontWeight: 800,
-                color: '#0f172a',
-                margin: '0 0 3px',
-                letterSpacing: '-0.02em',
-              }}
-            >
-              {cancha.nombre}
-            </h1>
-            <div
-              style={{
-                display: 'flex',
-                gap: 14,
-                alignItems: 'center',
-                fontSize: '0.82rem',
-                color: '#64748b',
-              }}
-            >
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                <Clock size={13} />
-                {cancha.duracion_min} min
-              </span>
-              <span>•</span>
-              <span>{sport}</span>
-            </div>
-          </div>
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>por turno</div>
-            <div
-              style={{
-                fontFamily: "'Space Grotesk', sans-serif",
-                fontSize: '1.5rem',
-                fontWeight: 800,
-                color: '#2563eb',
-                letterSpacing: '-0.02em',
-              }}
-            >
-              ${cancha.precio.toLocaleString('es-AR')}
+          <div className="mt-3 flex items-center justify-between gap-4">
+            <div>
+              <h1 className="text-2xl font-bold text-neutral-900">
+                {cancha.nombre}
+              </h1>
+              <div className="mt-1 flex items-center gap-3 text-sm text-neutral-600">
+                {/* Badge del tipo (Fútbol 5, Fútbol 7, Pádel) */}
+                <Badge variant="secondary">{tipoCanchaLabels[cancha.tipo]}</Badge>
+                {/* Precio y duración del turno */}
+                <span>${cancha.precio.toLocaleString('es-AR')} / {cancha.duracion_min} min</span>
+              </div>
             </div>
           </div>
         </div>
+      </header>
 
-        {/* Week nav */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12,
-            marginBottom: 20,
-            flexWrap: 'wrap',
-          }}
-        >
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              background: 'white',
-              borderRadius: 99,
-              padding: 4,
-              boxShadow: '0 1px 6px rgba(0,0,0,0.05)',
-              border: '1px solid #e2e8f0',
-            }}
-          >
-            <button
-              type="button"
-              onClick={() => setWeekOffset((o) => o - 1)}
-              style={navBtnStyle}
-              aria-label="Semana anterior"
-            >
-              <ChevronLeft size={17} color="#475569" />
-            </button>
-            <span
-              style={{
-                padding: '0 18px',
-                fontSize: '0.9rem',
-                fontWeight: 600,
-                color: '#0f172a',
-                fontFamily: "'Space Grotesk', sans-serif",
-              }}
-            >
-              {weekLabel}
-            </span>
-            <button
-              type="button"
-              onClick={() => setWeekOffset((o) => o + 1)}
-              style={navBtnStyle}
-              aria-label="Semana siguiente"
-            >
-              <ChevronRight size={17} color="#475569" />
-            </button>
-          </div>
-          <button
-            type="button"
-            onClick={() => setWeekOffset(0)}
-            style={{
-              padding: '8px 16px',
-              borderRadius: 10,
-              border: '1.5px solid #e2e8f0',
-              background: 'white',
-              color: '#374151',
-              fontFamily: "'DM Sans', sans-serif",
-              fontSize: '0.85rem',
-              fontWeight: 600,
-              cursor: 'pointer',
-            }}
-          >
-            Hoy
-          </button>
-          <div
-            style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}
-            className="reservar-mobile-nav"
-          >
-            <button
-              type="button"
-              onClick={() => setMobileDay((d) => Math.max(0, d - 1))}
-              style={{ ...navBtnStyle, background: 'white', border: '1px solid #e2e8f0' }}
-              aria-label="Día anterior"
-            >
-              <ChevronLeft size={15} color="#475569" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setMobileDay((d) => Math.min(6, d + 1))}
-              style={{ ...navBtnStyle, background: 'white', border: '1px solid #e2e8f0' }}
-              aria-label="Día siguiente"
-            >
-              <ChevronRight size={15} color="#475569" />
-            </button>
-          </div>
-        </div>
+      {/* ── Grid de turnos ── */}
+      <div className="mx-auto max-w-5xl px-4 py-4">
 
-        {/* Legend */}
-        <div
-          style={{
-            display: 'flex',
-            gap: 16,
-            marginBottom: 18,
-            flexWrap: 'wrap',
-          }}
-        >
-          {[
-            { label: 'Libre', bg: '#dcfce7', dot: '#16a34a' },
-            { label: 'Ocupado', bg: '#fee2e2', dot: '#dc2626' },
-            { label: 'Bloqueado', bg: '#f1f5f9', dot: '#94a3b8' },
-          ].map((l) => (
-            <div
-              key={l.label}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 7,
-                fontSize: '0.8rem',
-                color: '#64748b',
-              }}
+        {/* === VISTA DESKTOP: 7 columnas (una por día) === */}
+        <div className="hidden sm:block">
+          {/* Navegación de semana: botones para ir a la semana anterior/siguiente */}
+          <div className="mb-3 flex items-center justify-between">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setSemanaBase((d) => new Date(d.getTime() - 7 * 86400000))}
             >
-              <span
-                style={{
-                  width: 12,
-                  height: 12,
-                  borderRadius: 4,
-                  background: l.bg,
-                  border: `1px solid ${l.dot}`,
-                }}
+              <ChevronLeft className="h-4 w-4" /> Semana anterior
+            </Button>
+            {/* Rango visible: "12 may — 18 may" */}
+            <h2 className="text-sm font-medium text-neutral-700">
+              {formatearFechaCorta(dias[0])} — {formatearFechaCorta(dias[6])}
+            </h2>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setSemanaBase((d) => new Date(d.getTime() + 7 * 86400000))}
+            >
+              Semana siguiente <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+
+          {/* Grid de 7 columnas: una DiaColumna por día */}
+          <div className="grid grid-cols-7 gap-3">
+            {dias.map((dia) => (
+              <DiaColumna
+                key={dia.toISOString()}
+                dia={dia}
+                canchaId={cancha.id}
+                duracionMin={cancha.duracion_min}
+                onSlotClick={handleSlotClick}
               />
-              {l.label}
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
 
-        {/* Grid card — desktop (7 cols) */}
-        <div
-          className="reservar-desktop-grid"
-          style={{
-            background: 'white',
-            borderRadius: 16,
-            padding: 20,
-            boxShadow: '0 1px 10px rgba(0,0,0,0.05)',
-            border: '1px solid #f1f5f9',
-          }}
-        >
-          <WeekGrid
-            weekDates={weekDates}
+        {/* === VISTA MOBILE: un día a la vez con flechas === */}
+        <div className="sm:hidden">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            {/* Flecha izquierda: día anterior */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setDiaMobile((d) => new Date(d.getTime() - 86400000))}
+              // Deshabilitar si el día anterior ya pasó (no tiene sentido navegar hacia atrás del hoy)
+              disabled={esFechaPasada(new Date(diaMobile.getTime() - 86400000)) && !esHoy(new Date(diaMobile.getTime() - 86400000))}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            {/* Nombre del día actual: "lunes 12 de mayo" */}
+            <h2 className="flex-1 text-center text-sm font-medium text-neutral-700">
+              {formatearFechaLarga(diaMobile)}
+            </h2>
+            {/* Flecha derecha: día siguiente */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setDiaMobile((d) => new Date(d.getTime() + 86400000))}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+          {/* Columna única del día seleccionado (fullWidth = true) */}
+          <DiaColumna
+            dia={diaMobile}
             canchaId={cancha.id}
             duracionMin={cancha.duracion_min}
-            precioBase={cancha.precio}
-            franjas={cancha.franjas_precio}
             onSlotClick={handleSlotClick}
+            fullWidth
           />
         </div>
 
-        {/* Grid card — mobile (un día) */}
-        <div
-          className="reservar-mobile-grid"
-          style={{
-            background: 'white',
-            borderRadius: 16,
-            padding: 16,
-            boxShadow: '0 1px 10px rgba(0,0,0,0.05)',
-            border: '1px solid #f1f5f9',
-          }}
-        >
-          <MobileDayGrid
-            date={weekDates[mobileDay]}
-            dayLabel={DAY_LABELS[mobileDay]}
-            canchaId={cancha.id}
-            duracionMin={cancha.duracion_min}
-            precioBase={cancha.precio}
-            franjas={cancha.franjas_precio}
-            onSlotClick={handleSlotClick}
-          />
+        {/* ── Leyenda de colores ── */}
+        <div className="mt-6 flex flex-wrap items-center gap-4 text-xs text-neutral-600">
+          <div className="flex items-center gap-1.5">
+            <span className="inline-block h-3 w-3 rounded-sm bg-green-500" /> Libre
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="inline-block h-3 w-3 rounded-sm bg-red-500" /> Ocupado
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="inline-block h-3 w-3 rounded-sm bg-neutral-400" /> Bloqueado
+          </div>
         </div>
       </div>
 
-      {/* Modal de confirmación (reutiliza el existente) */}
-      {selected && cancha && (
+      {/* ── Modal de confirmación ── */}
+      {/* Se abre cuando el usuario logueado clickea un slot libre */}
+      {slotSeleccionado && cancha && (
         <ConfirmacionReservaModal
           cancha={cancha}
-          fecha={selected.fecha}
-          slot={selected.slot}
-          onClose={() => setSelected(null)}
+          fecha={slotSeleccionado.fecha}
+          slot={slotSeleccionado.slot}
+          onClose={() => setSlotSeleccionado(null)}  // cierra el modal
         />
       )}
-
-      <style>{`
-        .reservar-desktop-grid { display: block; }
-        .reservar-mobile-grid { display: none; }
-        .reservar-mobile-nav { display: none; }
-        @media (max-width: 768px) {
-          .reservar-desktop-grid { display: none; }
-          .reservar-mobile-grid { display: block; }
-          .reservar-mobile-nav { display: flex !important; }
-        }
-      `}</style>
     </div>
   )
 }
 
-const navBtnStyle: React.CSSProperties = {
-  width: 34,
-  height: 34,
-  borderRadius: 99,
-  border: 'none',
-  background: 'transparent',
-  cursor: 'pointer',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  transition: 'background 0.15s',
-}
-
-/* ─────────────────────────────────────────────────────────────────────────── */
-/* Week grid (desktop) — cada columna es un día, cada fila es una hora        */
-/* ─────────────────────────────────────────────────────────────────────────── */
-function WeekGrid({
-  weekDates,
+// ── DiaColumna ───────────────────────────────────────────────
+// Componente que muestra todos los slots de UN día específico.
+// Usa el hook useSlots para buscar los turnos disponibles/ocupados/bloqueados
+// de esa cancha para esa fecha.
+function DiaColumna({
+  dia,
   canchaId,
   duracionMin,
-  precioBase,
-  franjas,
   onSlotClick,
+  fullWidth = false,
 }: {
-  weekDates: Date[]
+  dia: Date
   canchaId: string
   duracionMin: number
-  precioBase?: number
-  franjas?: FranjaPrecio[] | null
   onSlotClick: (fecha: string, slot: Slot) => void
+  fullWidth?: boolean  // true en mobile para que ocupe todo el ancho
 }) {
-  // Unimos los slots de cada día. Usamos 7 queries separadas (longitud estable).
-  const dayStrings = weekDates.map(formatYMD)
-  // Hook calls unrolled para cumplir las rules-of-hooks (longitud estable = 7).
-  const q0 = useSlots({ canchaId, fecha: dayStrings[0], duracionMin, precioBase, franjas })
-  const q1 = useSlots({ canchaId, fecha: dayStrings[1], duracionMin, precioBase, franjas })
-  const q2 = useSlots({ canchaId, fecha: dayStrings[2], duracionMin, precioBase, franjas })
-  const q3 = useSlots({ canchaId, fecha: dayStrings[3], duracionMin, precioBase, franjas })
-  const q4 = useSlots({ canchaId, fecha: dayStrings[4], duracionMin, precioBase, franjas })
-  const q5 = useSlots({ canchaId, fecha: dayStrings[5], duracionMin, precioBase, franjas })
-  const q6 = useSlots({ canchaId, fecha: dayStrings[6], duracionMin, precioBase, franjas })
-  const dayQueries = [q0, q1, q2, q3, q4, q5, q6]
+  const fechaISO = formatearFechaISO(dia)  // "2025-05-12"
+  const pasada = esFechaPasada(dia)         // true si el día ya pasó
 
-  // Recolectamos todas las horas únicas de toda la semana (por si los horarios
-  // difieren entre días de la semana)
-  const hoursSet = new Set<string>()
-  dayQueries.forEach((q) => {
-    ;(q.data || []).forEach((s) => hoursSet.add(s.horaInicio))
-  })
-  const hours = Array.from(hoursSet).sort()
-
-  const today = startOfDay(new Date())
-
-  if (hours.length === 0) {
-    return (
-      <div style={{ textAlign: 'center', padding: '60px 20px', color: '#64748b', fontSize: '0.9rem' }}>
-        Esta cancha no tiene horarios configurados esta semana.
-      </div>
-    )
-  }
-
-  return (
-    <div>
-      {/* Day headers */}
-      <div style={{ display: 'grid', gridTemplateColumns: '60px repeat(7, 1fr)', gap: 8, marginBottom: 14 }}>
-        <div />
-        {weekDates.map((d, i) => {
-          const isToday = isSameDay(d, today)
-          return (
-            <div key={i} style={{ textAlign: 'center' }}>
-              <div
-                style={{
-                  fontSize: '0.78rem',
-                  fontWeight: 600,
-                  color: '#64748b',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.06em',
-                }}
-              >
-                {DAY_LABELS[i]}
-              </div>
-              <div
-                style={{
-                  marginTop: 4,
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  width: 30,
-                  height: 30,
-                  borderRadius: 8,
-                  background: isToday ? '#2563eb' : 'transparent',
-                  color: isToday ? 'white' : '#0f172a',
-                  fontWeight: 700,
-                  fontSize: '0.95rem',
-                  fontFamily: "'Space Grotesk', sans-serif",
-                }}
-              >
-                {d.getDate()}
-              </div>
-            </div>
-          )
-        })}
-      </div>
-
-      {/* Hours x days */}
-      {hours.map((h) => (
-        <div
-          key={h}
-          style={{
-            display: 'grid',
-            gridTemplateColumns: '60px repeat(7, 1fr)',
-            gap: 8,
-            marginBottom: 8,
-            alignItems: 'center',
-          }}
-        >
-          <span
-            style={{
-              fontSize: '0.78rem',
-              color: '#94a3b8',
-              fontWeight: 600,
-              fontFamily: "'Space Grotesk', sans-serif",
-            }}
-          >
-            {h.slice(0, 5)}
-          </span>
-          {weekDates.map((d, di) => {
-            const fecha = dayStrings[di]
-            const slots = dayQueries[di].data || []
-            const slot = slots.find((s) => s.horaInicio === h)
-            const pastDay = differenceInCalendarDays(d, today) < 0
-            const effectiveState = pastDay ? 'ocupado' : slot?.estado
-            const effectiveSlot: Slot | undefined = slot
-              ? { ...slot, estado: pastDay ? 'ocupado' : slot.estado }
-              : undefined
-
-            return (
-              <SlotPill
-                key={`${fecha}-${h}`}
-                state={effectiveState as Slot['estado'] | undefined}
-                hour={h.slice(0, 5)}
-                precio={slot?.precio}
-                onClick={() =>
-                  effectiveSlot && onSlotClick(fecha, effectiveSlot)
-                }
-              />
-            )
-          })}
-        </div>
-      ))}
-    </div>
-  )
-}
-
-/* ─────────────────────────────────────────────────────────────────────────── */
-/* Mobile day grid (1 column)                                                 */
-/* ─────────────────────────────────────────────────────────────────────────── */
-function MobileDayGrid({
-  date,
-  dayLabel,
-  canchaId,
-  duracionMin,
-  precioBase,
-  franjas,
-  onSlotClick,
-}: {
-  date: Date
-  dayLabel: string
-  canchaId: string
-  duracionMin: number
-  precioBase?: number
-  franjas?: FranjaPrecio[] | null
-  onSlotClick: (fecha: string, slot: Slot) => void
-}) {
-  const fechaISO = formatYMD(date)
-  const today = startOfDay(new Date())
-  const pastDay = differenceInCalendarDays(date, today) < 0
-  const isToday = isSameDay(date, today)
-
-  const { data: slots } = useSlots({
+  // useSlots: calcula los turnos del día basándose en los horarios
+  // del complejo, reservas existentes y bloqueos activos
+  const { data: slots, isLoading } = useSlots({
     canchaId,
     fecha: fechaISO,
     duracionMin,
-    precioBase,
-    franjas,
   })
 
   return (
-    <div>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 10,
-          marginBottom: 20,
-          paddingBottom: 16,
-          borderBottom: '1px solid #f1f5f9',
-        }}
-      >
-        <div style={{ textAlign: 'center' }}>
-          <div
-            style={{
-              fontFamily: "'Space Grotesk', sans-serif",
-              fontSize: '1.1rem',
-              fontWeight: 800,
-              color: '#0f172a',
-              letterSpacing: '-0.01em',
-            }}
-          >
-            {dayLabel}
-          </div>
-          <div
-            style={{
-              marginTop: 4,
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: 38,
-              height: 38,
-              borderRadius: 10,
-              background: isToday ? '#2563eb' : '#f1f5f9',
-              color: isToday ? 'white' : '#0f172a',
-              fontWeight: 700,
-              fontSize: '1.05rem',
-            }}
-          >
-            {date.getDate()}
-          </div>
-        </div>
-      </div>
-
-      {!slots || slots.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: 30, color: '#64748b', fontSize: '0.9rem' }}>
-          Sin horarios disponibles este día.
-        </div>
-      ) : (
-        <div style={{ display: 'grid', gap: 10 }}>
-          {slots.map((s) => {
-            const effective: Slot = { ...s, estado: pastDay ? 'ocupado' : s.estado }
-            return (
-              <div
-                key={s.horaInicio}
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: '60px 1fr',
-                  alignItems: 'center',
-                  gap: 12,
-                }}
-              >
-                <span
-                  style={{
-                    fontSize: '0.82rem',
-                    color: '#64748b',
-                    fontWeight: 600,
-                    fontFamily: "'Space Grotesk', sans-serif",
-                  }}
-                >
-                  {s.horaInicio.slice(0, 5)}
-                </span>
-                <SlotPill
-                  state={effective.estado}
-                  hour={s.horaInicio.slice(0, 5)}
-                  precio={s.precio}
-                  large
-                  onClick={() => onSlotClick(fechaISO, effective)}
-                />
-              </div>
-            )
-          })}
+    <div className={fullWidth ? 'space-y-2' : ''}>
+      {/* Encabezado del día — solo en desktop (cuando fullWidth=false) */}
+      {!fullWidth && (
+        <div className="text-center">
+          {/* Día de la semana: "LUN", "MAR", etc. */}
+          <p className="text-xs font-medium uppercase text-neutral-500">
+            {formatearDiaSemanaCorto(dia)}
+          </p>
+          {/* Número del día — azul si es hoy */}
+          <p className={`mt-0.5 text-lg font-semibold ${esHoy(dia) ? 'text-primary-600' : 'text-neutral-900'}`}>
+            {dia.getDate()}
+          </p>
         </div>
       )}
+
+      {/* Lista de slots del día */}
+      <div className={`space-y-1.5 ${fullWidth ? '' : 'mt-2'}`}>
+        {isLoading ? (
+          // Skeletons mientras carga
+          <>
+            <Skeleton className="h-9 w-full rounded-md" />
+            <Skeleton className="h-9 w-full rounded-md" />
+            <Skeleton className="h-9 w-full rounded-md" />
+          </>
+        ) : !slots || slots.length === 0 ? (
+          // Sin horarios configurados para este día
+          <p className="py-2 text-center text-xs text-neutral-400">Sin horarios</p>
+        ) : (
+          // SlotButton por cada turno del día
+          slots.map((slot) => (
+            <SlotButton
+              key={`${fechaISO}-${slot.horaInicio}`}
+              slot={slot}
+              disabled={pasada}  // si el día pasó, todos los botones quedan deshabilitados
+              onClick={() => onSlotClick(fechaISO, slot)}
+            />
+          ))
+        )}
+      </div>
     </div>
   )
 }
 
-/* ─────────────────────────────────────────────────────────────────────────── */
-/* SlotPill — botón por slot (libre/ocupado/bloqueado)                         */
-/* ─────────────────────────────────────────────────────────────────────────── */
-function SlotPill({
-  state,
-  hour,
-  precio,
+// ── SlotButton ───────────────────────────────────────────────
+// Botón individual que representa un turno.
+// El color cambia según el estado:
+//   - Fecha pasada: gris claro, cursor-not-allowed
+//   - ocupado: rojo, no clickeable
+//   - bloqueado: gris, no clickeable
+//   - libre: verde, clickeable
+function SlotButton({
+  slot,
+  disabled,  // true cuando la fecha ya pasó
   onClick,
-  large = false,
 }: {
-  state: Slot['estado'] | undefined
-  hour: string
-  precio?: number
+  slot: Slot
+  disabled: boolean
   onClick: () => void
-  large?: boolean
 }) {
-  const [hovered, setHovered] = useState(false)
-  if (!state) {
+  const baseClass = 'w-full rounded-md px-2 py-1.5 text-xs font-medium transition-colors'
+
+  // Fecha pasada: gris muy claro
+  if (disabled) {
     return (
-      <div
-        style={{
-          width: '100%',
-          padding: large ? '14px 12px' : '9px 8px',
-          borderRadius: 10,
-          background: '#f8fafc',
-          color: '#cbd5e1',
-          fontSize: large ? '0.9rem' : '0.78rem',
-          fontWeight: 600,
-          textAlign: 'center',
-          border: '1px dashed #e2e8f0',
-        }}
-      >
-        —
+      <div className={`${baseClass} cursor-not-allowed bg-neutral-100 text-neutral-300`}>
+        {slot.horaInicio}
       </div>
     )
   }
 
-  const cfg =
-    state === 'libre'
-      ? { bg: '#dcfce7', text: '#16a34a', hoverBg: '#16a34a', hoverText: 'white', label: hour }
-      : state === 'ocupado'
-        ? { bg: '#fee2e2', text: '#dc2626', hoverBg: '#fee2e2', hoverText: '#dc2626', label: 'Ocupado' }
-        : { bg: '#f1f5f9', text: '#94a3b8', hoverBg: '#f1f5f9', hoverText: '#94a3b8', label: '—' }
-  const clickable = state === 'libre'
+  // Slot ocupado: rojo, no clickeable
+  if (slot.estado === 'ocupado') {
+    return (
+      <div className={`${baseClass} cursor-not-allowed bg-red-100 text-red-700`}>
+        {slot.horaInicio}
+      </div>
+    )
+  }
 
-  // Etiqueta del precio (solo en slots libres cuando hay precio diferenciado)
-  const precioLabel = clickable && precio != null
-    ? `$${precio.toLocaleString('es-AR')}`
-    : null
+  // Slot bloqueado por el admin: gris, no clickeable
+  if (slot.estado === 'bloqueado') {
+    return (
+      <div className={`${baseClass} cursor-not-allowed bg-neutral-200 text-neutral-500`}>
+        {slot.horaInicio}
+      </div>
+    )
+  }
 
+  // Slot libre: verde, hover más oscuro, clickeable
   return (
     <button
       type="button"
-      disabled={!clickable}
-      onClick={clickable ? onClick : undefined}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        width: '100%',
-        padding: large ? '12px 10px' : '7px 8px',
-        borderRadius: 10,
-        border: 'none',
-        background: hovered && clickable ? cfg.hoverBg : cfg.bg,
-        color: hovered && clickable ? cfg.hoverText : cfg.text,
-        fontFamily: "'DM Sans', sans-serif",
-        fontSize: large ? '0.92rem' : '0.78rem',
-        fontWeight: 700,
-        cursor: clickable ? 'pointer' : 'not-allowed',
-        transition: 'all 0.15s ease',
-        letterSpacing: '-0.01em',
-        boxShadow: hovered && clickable ? '0 4px 12px rgba(22,163,74,0.35)' : 'none',
-        transform: hovered && clickable ? 'translateY(-1px)' : 'none',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        gap: 2,
-      }}
+      onClick={onClick}
+      className={`${baseClass} bg-green-100 text-green-700 hover:bg-green-200`}
     >
-      <span>{hovered && clickable ? 'Reservar' : cfg.label}</span>
-      {!hovered && precioLabel && (
-        <span
-          style={{
-            fontSize: large ? '0.72rem' : '0.65rem',
-            fontWeight: 600,
-            opacity: 0.75,
-            letterSpacing: 0,
-          }}
-        >
-          {precioLabel}
-        </span>
-      )}
+      {slot.horaInicio}
     </button>
   )
 }
 
-/* ─────────────────────────────────────────────────────────────────────────── */
-/* Skeleton                                                                   */
-/* ─────────────────────────────────────────────────────────────────────────── */
+// ── ReservarSkeleton ─────────────────────────────────────────
+// Pantalla de carga mientras se busca la información de la cancha.
+// Imita la estructura del header y el grid de 7 columnas.
 function ReservarSkeleton() {
   return (
-    <div style={{ background: '#f8fafc', minHeight: '100vh', fontFamily: "'DM Sans', sans-serif" }}>
-      <Navbar />
-      <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 20px 60px' }}>
-        <div style={{ height: 90, background: '#f1f5f9', borderRadius: 14, marginBottom: 28 }} />
-        <div style={{ height: 40, background: '#f1f5f9', borderRadius: 14, marginBottom: 20, width: 320 }} />
-        <div style={{ height: 520, background: '#f1f5f9', borderRadius: 16 }} />
+    <div className="min-h-screen bg-neutral-50">
+      <header className="border-b bg-white">
+        <div className="mx-auto max-w-5xl px-4 py-4">
+          <Skeleton className="h-4 w-32" />
+          <Skeleton className="mt-3 h-8 w-64" />
+        </div>
+      </header>
+      <div className="mx-auto max-w-5xl px-4 py-4">
+        <div className="grid grid-cols-7 gap-3">
+          {Array.from({ length: 7 }).map((_, i) => (
+            <Skeleton key={i} className="h-96" />
+          ))}
+        </div>
       </div>
     </div>
   )

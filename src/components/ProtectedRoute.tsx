@@ -36,15 +36,9 @@ export default function ProtectedRoute({ rol }: ProtectedRouteProps) {
     return <Navigate to="/login" state={{ from: location }} replace />
   }
 
-  // Si se requiere un rol específico y no coincide, redirigir a home (RootRedirect lo lleva al lugar correcto)
+  // Si se requiere un rol específico y no coincide, redirigir a la home
   if (rol && userRol !== rol) {
     return <Navigate to="/" replace />
-  }
-
-  // Si la ruta es para "cualquier autenticado" pero el usuario es superadmin,
-  // redirigirlo a su panel — el superadmin solo puede usar /superadmin
-  if (!rol && userRol === 'superadmin') {
-    return <Navigate to="/superadmin" replace />
   }
 
   // Autorizado: renderizar las rutas hijas
