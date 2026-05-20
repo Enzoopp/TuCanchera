@@ -17,6 +17,7 @@ type ReservaConJoins = Reserva & {
   canchas: {
     nombre: string
     tipo: string
+    precio: number
     complejos: { nombre: string; slug: string } | null
   } | null
 }
@@ -404,6 +405,11 @@ function ReservationCard({
               {complejoNombre}
             </h3>
             <div style={{ fontSize: '0.85rem', color: '#64748b' }}>{canchaNombre}</div>
+            {(r.precio > 0 || (r.canchas?.precio ?? 0) > 0) && (
+              <div style={{ fontSize: '0.8rem', color: '#16a34a', fontWeight: 700, marginTop: 2 }}>
+                ${(r.precio > 0 ? r.precio : (r.canchas?.precio ?? 0)).toLocaleString('es-AR')}
+              </div>
+            )}
           </div>
           <span
             style={{

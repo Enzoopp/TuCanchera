@@ -106,6 +106,7 @@ export default function ConfirmacionReservaModal({
         horaInicio: slot.horaInicio,
         horaFin: slot.horaFin,
         metodoPago: 'en_lugar',
+        precio: slot.precio ?? cancha.precio,
       })
       await queryClient.invalidateQueries({ queryKey: ['slots', cancha.id, fecha] })
       setMetodoConfirmado('lugar')
@@ -419,7 +420,7 @@ function FormView({
               letterSpacing: '-0.02em',
             }}
           >
-            ${cancha.precio.toLocaleString('es-AR')}
+            ${(slot.precio ?? cancha.precio).toLocaleString('es-AR')}
           </span>
         </div>
       </div>

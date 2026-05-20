@@ -84,6 +84,7 @@ export interface Reserva {
   hora_fin: string
   metodo_pago: MetodoPago
   estado: EstadoReserva
+  precio: number                // precio efectivo pagado al reservar
   mp_payment_id: string | null  // reservado para futura integración MP
   // null = sin registrar (turno futuro o no aplica), true = asistió, false = no se presentó
   asistio: boolean | null

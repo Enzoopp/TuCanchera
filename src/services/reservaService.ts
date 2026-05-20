@@ -22,6 +22,7 @@ interface CrearReservaParams {
   horaInicio: string
   horaFin: string
   metodoPago: MetodoPago
+  precio: number  // precio efectivo del slot al momento de reservar
 }
 
 export async function crearReservaEnLugar(
@@ -37,6 +38,7 @@ export async function crearReservaEnLugar(
       hora_fin: params.horaFin,
       metodo_pago: 'en_lugar',
       estado: 'confirmada',
+      precio: params.precio,
     })
     .select()
     .single()
@@ -51,6 +53,7 @@ export async function fetchMisReservas(clienteId: string): Promise<
       canchas: {
         nombre: string
         tipo: string
+        precio: number
         complejos: { nombre: string; slug: string } | null
       } | null
     }
@@ -64,6 +67,7 @@ export async function fetchMisReservas(clienteId: string): Promise<
       canchas (
         nombre,
         tipo,
+        precio,
         complejos (
           nombre,
           slug

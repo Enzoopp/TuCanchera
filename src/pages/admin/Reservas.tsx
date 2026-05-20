@@ -121,7 +121,7 @@ export default function Reservas() {
   const totalIngresos = useMemo(() => {
     return reservas
       .filter((r) => r.estado === 'confirmada')
-      .reduce((sum, r) => sum + (r.canchas?.precio ?? 0), 0)
+      .reduce((sum, r) => sum + (r.precio > 0 ? r.precio : (r.canchas?.precio ?? 0)), 0)
   }, [reservas])
 
   const totalPages = Math.max(1, Math.ceil(reservas.length / PER_PAGE))
@@ -175,7 +175,7 @@ export default function Reservas() {
       METODO_LABEL[r.metodo_pago] ?? r.metodo_pago,
       ESTADO_LABEL[r.estado] ?? r.estado,
       r.asistio === true ? 'Sí' : r.asistio === false ? 'No' : '',
-      r.canchas?.precio != null ? String(r.canchas.precio) : '',
+      r.precio > 0 ? String(r.precio) : (r.canchas?.precio != null ? String(r.canchas.precio) : ''),
     ])
 
     const csvContent =

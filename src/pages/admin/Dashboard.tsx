@@ -18,6 +18,7 @@ import {
 } from '@/services/adminService'
 import { fetchCanchasByComplejo, fetchBloqueosByCancha } from '@/services/complejoService'
 import { formatearFechaISO } from '@/utils/fechas'
+import { supabase } from '@/lib/supabase'
 import SportIcon, { sportPalette, sportLabel } from '@/components/brand/SportIcon'
 import {
   Calendar,
@@ -69,6 +70,22 @@ export default function Dashboard() {
   const queryClient = useQueryClient()
   const hoy = formatearFechaISO(new Date())
 
+  // Realtime: actualiza el dashboard al instante cuando cambian reservas
+  useEffect(() => {
+    if (!complejo) return
+    const channel = supabase
+      .channel('admin-dashboard-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'reservas' },
+        () => {
+          void queryClient.invalidateQueries({ queryKey: ['admin-dashboard-reservas'] })
+        }
+      )
+      .subscribe()
+    return () => { void supabase.removeChannel(channel) }
+  }, [complejo, queryClient])
+
   const [ahora, setAhora] = useState(() => new Date())
   useEffect(() => {
     const id = setInterval(() => setAhora(new Date()), 60_000)
@@ -79,7 +96,6 @@ export default function Dashboard() {
     queryKey: ['admin-dashboard-reservas', complejo?.id, hoy],
     queryFn: () => fetchReservasDelComplejo(complejo!.id, { fecha: hoy }),
     enabled: !!complejo,
-    refetchInterval: 60_000,
   })
 
   const { data: canchas } = useQuery({
@@ -127,7 +143,7 @@ export default function Dashboard() {
   const confirmadas = (reservas ?? []).filter((r) => r.estado === 'confirmada')
   const pendientes = (reservas ?? []).filter((r) => r.estado === 'pendiente_pago')
   const bloqueadasCount = bloqueos?.length ?? 0
-  const ingresosDia = confirmadas.reduce((acc, r) => acc + (((r as unknown as { canchas?: { precio?: number } }).canchas?.precio ?? 0)), 0)
+  const ingresosDia = confirmadas.reduce((acc, r) => acc + ((r as unknown as { precio?: number }).precio ?? (r as unknown as { canchas?: { precio?: number } }).canchas?.precio ?? 0), 0)
 
   const fechaDisplay = `${DAYS_LONG[ahora.getDay()]}, ${ahora.getDate()} de ${MONTHS_LONG[ahora.getMonth()]} de ${ahora.getFullYear()}`
 
