@@ -106,27 +106,29 @@ export default function Navbar({ transparent = false }: NavbarProps) {
                 >
                   <UserIcon size={15} /> Mis reservas
                 </Link>
-              )
-              <Link
-                to="/perfil"
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  padding: '8px 14px',
-                  borderRadius: 10,
-                  background: '#f8fafc',
-                  color: '#0f172a',
-                  fontWeight: 600,
-                  fontSize: '0.88rem',
-                  textDecoration: 'none',
-                  border: '1px solid #e2e8f0',
-                  transition: 'background 0.15s',
-                }}
-              >
-                <UserCircle size={15} />
-                Mi perfil
-              </Link>}
+              )}
+              {user && (
+                <Link
+                  to="/perfil"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '8px 14px',
+                    borderRadius: 10,
+                    background: '#f8fafc',
+                    color: '#0f172a',
+                    fontWeight: 600,
+                    fontSize: '0.88rem',
+                    textDecoration: 'none',
+                    border: '1px solid #e2e8f0',
+                    transition: 'background 0.15s',
+                  }}
+                >
+                  <UserCircle size={15} />
+                  Mi perfil
+                </Link>
+              )}
               <button
                 onClick={async () => {
                   await signOut()
