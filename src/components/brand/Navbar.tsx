@@ -199,10 +199,9 @@ export default function Navbar({ transparent = false }: NavbarProps) {
           .navbar-nav { gap: 4px !important; }
           .navbar-login-full { display: none; }
           .navbar-login-short { display: inline; }
-          .navbar-login-link { padding: 7px 10px !important; font-size: 0.83rem !important; }
-          .navbar-register-link { padding: 8px 12px !important; font-size: 0.83rem !important; }
+          .navbar-login-link { padding: 8px 10px !important; font-size: 0.8rem !important; }
         }
       `}</style>
-    </header>
+    </div>
   )
 }
