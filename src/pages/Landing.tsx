@@ -61,6 +61,7 @@ export default function Landing() {
 
   const [sport, setSport] = useState<SportFilter>('Todos')
   const [search, setSearch] = useState('')
+  const [ciudadFilter, setCiudadFilter] = useState('Todas')
 
   const { data: complejos, isLoading: loadingComplejos } = useQuery({
     queryKey: ['complejos-activos'],
@@ -97,18 +98,22 @@ export default function Landing() {
     })
   }, [complejos, canchas])
 
+  const ciudades = useMemo(() => getCiudades(enriquecidos), [enriquecidos])
+
   const filtered = useMemo(() => {
     return enriquecidos.filter((cx) => {
       const matchSport = sport === 'Todos' || cx.sports.includes(sport as 'Fútbol 5' | 'Fútbol 7' | 'Pádel')
+      const matchCiudad = ciudadFilter === 'Todas' || (cx.ciudad?.trim() ?? '') === ciudadFilter
       const q = search.trim().toLowerCase()
       const matchSearch =
         !q ||
         cx.nombre.toLowerCase().includes(q) ||
         (cx.direccion || '').toLowerCase().includes(q) ||
+        (cx.ciudad || '').toLowerCase().includes(q) ||
         cx.sports.some((s) => s.toLowerCase().includes(q))
-      return matchSport && matchSearch
+      return matchSport && matchCiudad && matchSearch
     })
-  }, [enriquecidos, sport, search])
+  }, [enriquecidos, sport, search, ciudadFilter])
 
   return (
     <div style={{ background: '#f8fafc', minHeight: '100vh', fontFamily: "'DM Sans', sans-serif" }}>
@@ -718,29 +723,3 @@ function EmptyState() {
           width: 56,
           height: 56,
           margin: '0 auto 16px',
-          borderRadius: 99,
-          background: '#eff6ff',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <Building2 size={24} color="#2563eb" />
-      </div>
-      <h3
-        style={{
-          fontFamily: "'Space Grotesk', sans-serif",
-          fontSize: '1.05rem',
-          fontWeight: 800,
-          color: '#0f172a',
-          margin: '0 0 6px',
-        }}
-      >
-        No encontramos complejos
-      </h3>
-      <p style={{ color: '#64748b', fontSize: '0.9rem', maxWidth: 420, margin: '0 auto' }}>
-        Probá con otro filtro o volvé pronto — estamos sumando nuevos complejos todas las semanas.
-      </p>
-    </div>
-  )
-}
