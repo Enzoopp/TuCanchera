@@ -49,6 +49,7 @@ export default function GestionComplejo() {
   const [nombre, setNombre] = useState('')
   const [descripcion, setDescripcion] = useState('')
   const [direccion, setDireccion] = useState('')
+  const [ciudad, setCiudad] = useState('')
   const [guardando, setGuardando] = useState(false)
   const [subiendoLogo, setSubiendoLogo] = useState(false)
   const [subiendoFoto, setSubiendoFoto] = useState(false)
@@ -59,6 +60,7 @@ export default function GestionComplejo() {
       setNombre(complejo.nombre)
       setDescripcion(complejo.descripcion ?? '')
       setDireccion(complejo.direccion ?? '')
+      setCiudad(complejo.ciudad ?? '')
     }
   }, [complejo])
 
@@ -73,13 +75,14 @@ export default function GestionComplejo() {
     setNombre(complejo.nombre)
     setDescripcion(complejo.descripcion ?? '')
     setDireccion(complejo.direccion ?? '')
+    setCiudad(complejo.ciudad ?? '')
   }
 
   async function handleGuardar() {
     if (!complejo) return
     setGuardando(true)
     try {
-      await updateComplejo(complejo.id, { nombre, descripcion, direccion })
+      await updateComplejo(complejo.id, { nombre, descripcion, direccion , ciudad: ciudad.trim() || null })
       await queryClient.invalidateQueries({ queryKey: ['mi-complejo'] })
       setShowToast(true)
       setTimeout(() => setShowToast(false), 2800)

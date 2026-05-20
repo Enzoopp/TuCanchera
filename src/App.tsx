@@ -14,6 +14,7 @@ import Complejo from '@/pages/Complejo'
 import Landing from '@/pages/Landing'
 import Reservar from '@/pages/Reservar'
 import MisReservas from '@/pages/MisReservas'
+import Perfil from '@/pages/Perfil'
 import Dashboard from '@/pages/admin/Dashboard'
 import GestionComplejo from '@/pages/admin/GestionComplejo'
 import GestionCanchas from '@/pages/admin/GestionCanchas'
@@ -87,6 +88,7 @@ function App() {
             {/* Rutas protegidas: cualquier rol autenticado */}
             <Route element={<ProtectedRoute />}>
               <Route path="/mis-reservas" element={<MisReservas />} />
+              <Route path="/perfil" element={<Perfil />} />
             </Route>
 
             {/* Ruta superadmin */}

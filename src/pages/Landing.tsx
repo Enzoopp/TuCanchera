@@ -32,6 +32,15 @@ interface ComplejoEnriquecido extends Complejo {
   priceFrom: number | null
 }
 
+// Helper: extrae ciudades únicas de una lista de complejos
+function getCiudades(complejos: ComplejoEnriquecido[]): string[] {
+  const set = new Set<string>()
+  for (const c of complejos) {
+    if (c.ciudad) set.add(c.ciudad.trim())
+  }
+  return Array.from(set).sort()
+}
+
 async function fetchAllCanchasActivas(): Promise<Cancha[]> {
   const { data, error } = await supabase
     .from('canchas')
@@ -290,7 +299,35 @@ export default function Landing() {
             ))}
           </div>
         </div>
+        {/* Ciudad filter */}
+        {ciudades.length > 0 && (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
+            <span style={{ fontSize: '0.8rem', color: '#94a3b8', fontWeight: 600, alignSelf: 'center' }}>Ciudad:</span>
+            {['Todas', ...ciudades].map((c) => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => setCiudadFilter(c)}
+                style={{
+                  padding: '5px 14px',
+                  borderRadius: 99,
+                  border: ciudadFilter === c ? '2px solid #2563eb' : '1.5px solid #e2e8f0',
+                  background: ciudadFilter === c ? '#eff6ff' : 'white',
+                  color: ciudadFilter === c ? '#2563eb' : '#64748b',
+                  fontFamily: "'DM Sans', sans-serif",
+                  fontSize: '0.82rem',
+                  fontWeight: ciudadFilter === c ? 700 : 500,
+                  cursor: 'pointer',
+                  transition: 'all 0.15s',
+                }}
+              >
+                {c}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
+    </div>
 
       {/* ── Complexes grid ─────────────────────────────────────────────────── */}
       <div id="complejos" style={{ maxWidth: 1200, margin: '0 auto', padding: '64px 24px' }}>
