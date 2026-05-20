@@ -723,3 +723,29 @@ function EmptyState() {
           width: 56,
           height: 56,
           margin: '0 auto 16px',
+          background: '#f1f5f9',
+          borderRadius: '50%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <Search size={24} color="#94a3b8" />
+      </div>
+      <h3
+        style={{
+          fontFamily: "'Space Grotesk', sans-serif",
+          fontSize: '1.1rem',
+          fontWeight: 700,
+          color: '#0f172a',
+          margin: '0 0 8px',
+        }}
+      >
+        Sin resultados
+      </h3>
+      <p style={{ color: '#64748b', fontSize: '0.9rem', margin: 0 }}>
+        No encontramos complejos con esos filtros. Probá cambiando la búsqueda.
+      </p>
+    </div>
+  )
+}
