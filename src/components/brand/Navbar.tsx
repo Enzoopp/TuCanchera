@@ -4,7 +4,7 @@
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 import Logo from './Logo'
-import { LogOut, User as UserIcon } from 'lucide-react'
+import { LogOut, User as UserIcon, UserCircle } from 'lucide-react'
 
 interface NavbarProps {
   transparent?: boolean // para heros full-bleed: fondo transparente, texto blanco
@@ -202,6 +202,6 @@ export default function Navbar({ transparent = false }: NavbarProps) {
           .navbar-login-link { padding: 8px 10px !important; font-size: 0.8rem !important; }
         }
       `}</style>
-    </div>
+    </header>
   )
 }
