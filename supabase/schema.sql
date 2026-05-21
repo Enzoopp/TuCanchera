@@ -150,7 +150,7 @@ CREATE TABLE reservas (
   hora_fin        TIME    NOT NULL,
   metodo_pago     TEXT    NOT NULL CHECK (metodo_pago IN ('en_lugar', 'mercadopago')),
   estado          TEXT    NOT NULL DEFAULT 'pendiente_pago'
-                          CHECK (estado IN ('confirmada', 'cancelada_admin', 'pendiente_pago')),
+                          CHECK (estado IN ('confirmada', 'cancelada_admin', 'cancelada_cliente', 'pendiente_pago')),
   mp_payment_id   TEXT,                            -- reservado para futura integración MP
   asistio         BOOLEAN,                         -- NULL=sin registrar, true=asistió, false=no asistió
   archivada       BOOLEAN NOT NULL DEFAULT false,  -- true cuando fue copiada a reservas_archivadas
@@ -159,10 +159,10 @@ CREATE TABLE reservas (
 );
 
 -- Índice único parcial: previene doble-booking de un slot.
--- Solo aplica a reservas activas (no canceladas).
+-- Solo aplica a reservas activas (excluye ambos tipos de cancelación).
 CREATE UNIQUE INDEX reservas_slot_unico
   ON reservas (cancha_id, fecha, hora_inicio)
-  WHERE estado NOT IN ('cancelada_admin');
+  WHERE estado NOT IN ('cancelada_admin', 'cancelada_cliente');
 
 CREATE INDEX idx_reservas_cliente_id ON reservas (cliente_id);
 
@@ -333,12 +333,27 @@ SELECT cron.schedule(
 -- --------------------------------------------------------------------------
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 
--- El usuario ve su propio perfil; el admin ve todos los de su complejo
+-- El usuario ve su propio perfil.
+-- El admin ve solo clientes que reservaron en su complejo (+ su propio perfil admin).
 CREATE POLICY "profiles_select"
   ON profiles FOR SELECT
   USING (
     (SELECT auth.uid()) = user_id
-    OR get_my_rol() = 'admin'
+    OR
+    (
+      get_my_rol() = 'admin'
+      AND (
+        rol = 'admin'
+        OR id IN (
+          SELECT DISTINCT r.cliente_id
+          FROM reservas r
+          JOIN canchas ca ON ca.id = r.cancha_id
+          JOIN complejos co ON co.id = ca.complejo_id
+          JOIN profiles p_admin ON p_admin.id = co.admin_id
+          WHERE p_admin.user_id = (SELECT auth.uid())
+        )
+      )
+    )
   );
 
 -- Cada usuario solo puede actualizar su propio perfil
@@ -567,10 +582,8 @@ CREATE POLICY "El admin puede eliminar bloqueos de sus canchas"
 -- --------------------------------------------------------------------------
 ALTER TABLE reservas ENABLE ROW LEVEL SECURITY;
 
--- Cualquiera puede ver qué slots están ocupados (sin datos del cliente)
-CREATE POLICY "Disponibilidad pública de slots ocupados"
-  ON reservas FOR SELECT
-  USING (estado = ANY (ARRAY['confirmada', 'pendiente_pago']));
+-- La disponibilidad pública se sirve vía RPC get_disponibilidad_slots()
+-- (sin exponer PII). No hay política SELECT pública en esta tabla.
 
 -- El cliente ve sus propias reservas completas
 CREATE POLICY "El cliente puede ver sus propias reservas"
@@ -662,19 +675,13 @@ CREATE POLICY "archivadas_select_admin"
 
 -- --------------------------------------------------------------------------
 -- RLS: codigos_invitacion
--- Lectura pública para verificar códigos en el registro de admins.
--- Actualización para marcar como usado por cualquier usuario autenticado.
+-- El onboarding de admins es solo por invitación via Edge Function (superadmin).
+-- Sin políticas públicas: solo service_role puede leer/escribir.
 -- --------------------------------------------------------------------------
 ALTER TABLE codigos_invitacion ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Cualquiera puede verificar un código de invitación"
-  ON codigos_invitacion FOR SELECT
-  USING (true);
-
-CREATE POLICY "Usuario autenticado puede marcar codigo como usado"
-  ON codigos_invitacion FOR UPDATE
-  USING  ((SELECT auth.role()) = 'authenticated')
-  WITH CHECK ((SELECT auth.role()) = 'authenticated');
+-- Sin políticas SELECT/UPDATE para anon o authenticated.
+-- Las Edge Functions de invitación usan el service_role key del servidor.
 
 -- ============================================================================
 -- FUNCIÓN: cerrar_mes_complejo(complejo_id, anio, mes)
@@ -928,7 +935,10 @@ GRANT  EXECUTE ON FUNCTION public.cancelar_reserva_admin(UUID) TO authenticated;
 
 -- ============================================================================
 -- FUNCIÓN: cancelar_reserva_cliente(reserva_id)
--- Permite al cliente cancelar su propia reserva, verificando ownership.
+-- Permite al cliente cancelar su propia reserva.
+-- Valida: ownership, estado cancelable, ventana mínima de 24 hs.
+-- Retorna: { ok, code } — codes: CANCELLED | UNAUTHORIZED | NOT_FOUND |
+--          WRONG_STATUS | TOO_LATE (+ horas_restantes)
 -- ============================================================================
 CREATE OR REPLACE FUNCTION public.cancelar_reserva_cliente(
   p_reserva_id UUID
@@ -939,7 +949,10 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-  v_profile_id UUID;
+  v_profile_id  UUID;
+  v_reserva     RECORD;
+  v_inicio      TIMESTAMPTZ;
+  v_horas_rest  NUMERIC;
 BEGIN
   SELECT id INTO v_profile_id
   FROM public.profiles WHERE user_id = (SELECT auth.uid());
@@ -948,20 +961,75 @@ BEGIN
     RETURN jsonb_build_object('ok', false, 'code', 'UNAUTHORIZED');
   END IF;
 
-  IF NOT EXISTS (
-    SELECT 1 FROM public.reservas
-    WHERE id = p_reserva_id AND cliente_id = v_profile_id
-  ) THEN
+  SELECT * INTO v_reserva
+  FROM public.reservas
+  WHERE id = p_reserva_id AND cliente_id = v_profile_id;
+
+  IF NOT FOUND THEN
     RETURN jsonb_build_object('ok', false, 'code', 'NOT_FOUND');
   END IF;
 
-  UPDATE public.reservas SET estado = 'cancelada_admin' WHERE id = p_reserva_id;
+  IF v_reserva.estado NOT IN ('confirmada', 'pendiente_pago') THEN
+    RETURN jsonb_build_object('ok', false, 'code', 'WRONG_STATUS');
+  END IF;
+
+  v_inicio := (v_reserva.fecha || ' ' || v_reserva.hora_inicio)::TIMESTAMPTZ;
+  v_horas_rest := EXTRACT(EPOCH FROM (v_inicio - NOW())) / 3600.0;
+
+  IF v_horas_rest < 24 THEN
+    RETURN jsonb_build_object(
+      'ok',              false,
+      'code',            'TOO_LATE',
+      'horas_restantes', GREATEST(v_horas_rest, 0)
+    );
+  END IF;
+
+  UPDATE public.reservas SET estado = 'cancelada_cliente' WHERE id = p_reserva_id;
   RETURN jsonb_build_object('ok', true, 'code', 'CANCELLED');
 END;
 $$;
 
 REVOKE EXECUTE ON FUNCTION public.cancelar_reserva_cliente(UUID) FROM PUBLIC;
 GRANT  EXECUTE ON FUNCTION public.cancelar_reserva_cliente(UUID) TO authenticated;
+
+-- ============================================================================
+-- FUNCIÓN: get_disponibilidad_slots(cancha_id, fecha)
+-- Devuelve los slots ocupados para una cancha en una fecha, SIN PII.
+-- Solo expone: cancha_id, fecha, hora_inicio, hora_fin, estado.
+-- Accesible por anon y authenticated (disponibilidad pública).
+-- Reemplaza la política SELECT pública de la tabla reservas.
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.get_disponibilidad_slots(
+  p_cancha_id UUID,
+  p_fecha     DATE
+)
+RETURNS TABLE (
+  cancha_id   UUID,
+  fecha       DATE,
+  hora_inicio TIME,
+  hora_fin    TIME,
+  estado      TEXT
+)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT
+    r.cancha_id,
+    r.fecha,
+    r.hora_inicio,
+    r.hora_fin,
+    r.estado
+  FROM public.reservas r
+  WHERE r.cancha_id = p_cancha_id
+    AND r.fecha     = p_fecha
+    AND r.estado    IN ('confirmada', 'pendiente_pago');
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.get_disponibilidad_slots(UUID, DATE) FROM PUBLIC;
+GRANT  EXECUTE ON FUNCTION public.get_disponibilidad_slots(UUID, DATE) TO anon;
+GRANT  EXECUTE ON FUNCTION public.get_disponibilidad_slots(UUID, DATE) TO authenticated;
 
 -- ============================================================================
 -- STORAGE: buckets públicos para logos y galería de complejos
@@ -979,10 +1047,10 @@ INSERT INTO storage.buckets (id, name, public)
 VALUES ('fotos-complejos', 'fotos-complejos', true)
 ON CONFLICT (id) DO NOTHING;
 
--- Lectura pública de logos
+-- Lectura pública de logos (solo por path conocido, no permite listing vacío)
 CREATE POLICY "logos_select_public"
   ON storage.objects FOR SELECT
-  USING (bucket_id = 'logos');
+  USING (bucket_id = 'logos' AND name IS NOT NULL AND length(name) > 0);
 
 -- El admin sube logo solo al path de su propio complejo
 CREATE POLICY "Admin sube logo de su complejo"
@@ -1020,10 +1088,10 @@ CREATE POLICY "Admin borra logo de su complejo"
     )
   );
 
--- Lectura pública de fotos
+-- Lectura pública de fotos (solo por path conocido, no permite listing vacío)
 CREATE POLICY "fotos_complejos_select_public"
   ON storage.objects FOR SELECT
-  USING (bucket_id = 'fotos-complejos');
+  USING (bucket_id = 'fotos-complejos' AND name IS NOT NULL AND length(name) > 0);
 
 -- El admin sube fotos solo al path de su propio complejo
 CREATE POLICY "Admin sube fotos de su complejo"

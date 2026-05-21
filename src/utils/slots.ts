@@ -9,7 +9,11 @@
 // DRY: única fuente de verdad para la lógica de disponibilidad.
 // El calendario del cliente y del admin usan esta misma función.
 
-import type { FranjaPrecio, HorarioCancha, Reserva, Bloqueo, Slot } from '@/types'
+import type { FranjaPrecio, HorarioCancha, Bloqueo, Slot } from '@/types'
+
+// Tipo mínimo que generarSlots necesita de una reserva (solo hora_inicio).
+// Permite recibir tanto Reserva[] como el resultado de la RPC get_disponibilidad_slots.
+type ReservaMinima = { hora_inicio: string }
 
 /**
  * Genera los slots disponibles para una cancha en una fecha específica.
@@ -24,7 +28,7 @@ import type { FranjaPrecio, HorarioCancha, Reserva, Bloqueo, Slot } from '@/type
  */
 export function generarSlots(
   horarios: HorarioCancha[],
-  reservas: Reserva[],
+  reservas: ReservaMinima[],
   bloqueos: Bloqueo[],
   duracionMin: number,
   precioBase?: number,

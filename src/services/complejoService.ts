@@ -3,7 +3,17 @@
 // Si en el futuro se cambia el backend, solo se modifica esta capa.
 
 import { supabase } from '@/lib/supabase'
-import type { Cancha, Complejo, FotoComplejo, HorarioCancha, Bloqueo, Reserva } from '@/types'
+import type { Cancha, Complejo, FotoComplejo, HorarioCancha, Bloqueo } from '@/types'
+
+// Tipo mínimo devuelto por la RPC get_disponibilidad_slots.
+// No expone PII del cliente (sin cliente_id ni mp_payment_id).
+export type DisponibilidadSlot = {
+  cancha_id: string
+  fecha: string
+  hora_inicio: string
+  hora_fin: string
+  estado: string
+}
 
 export async function fetchComplejosActivos(): Promise<Complejo[]> {
   const { data, error } = await supabase
@@ -52,16 +62,16 @@ export async function fetchHorariosByCancha(canchaId: string): Promise<HorarioCa
 export async function fetchReservasConfirmadas(
   canchaId: string,
   fecha: string
-): Promise<Reserva[]> {
-  const { data, error } = await supabase
-    .from('reservas')
-    .select('*')
-    .eq('cancha_id', canchaId)
-    .eq('fecha', fecha)
-    .in('estado', ['confirmada', 'pendiente_pago'])
-
+): Promise<DisponibilidadSlot[]> {
+  // Usa la RPC en lugar de query directa a la tabla reservas.
+  // Esto evita exponer PII (cliente_id, mp_payment_id) al rol anon/authenticated
+  // que solo necesita saber qué slots están ocupados.
+  const { data, error } = await supabase.rpc('get_disponibilidad_slots', {
+    p_cancha_id: canchaId,
+    p_fecha: fecha,
+  })
   if (error) throw error
-  return data as Reserva[]
+  return (data ?? []) as DisponibilidadSlot[]
 }
 
 export async function fetchBloqueosByCancha(
