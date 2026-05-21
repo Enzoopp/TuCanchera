@@ -495,6 +495,8 @@ function WeekGrid({
 
   // Recolectamos todas las horas únicas de toda la semana (por si los horarios
   // difieren entre días de la semana)
+  const hasError = dayQueries.some((q) => q.isError)
+
   const hoursSet = new Set<string>()
   dayQueries.forEach((q) => {
     ;(q.data || []).forEach((s) => hoursSet.add(s.horaInicio))
@@ -502,6 +504,29 @@ function WeekGrid({
   const hours = Array.from(hoursSet).sort()
 
   const today = startOfDay(new Date())
+
+  if (hasError) {
+    return (
+      <div
+        style={{
+          textAlign: 'center',
+          padding: '60px 20px',
+          color: '#dc2626',
+          fontSize: '0.9rem',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: 12,
+        }}
+      >
+        <span style={{ fontSize: '1.5rem' }}>⚠️</span>
+        <span style={{ fontWeight: 700 }}>No se pudieron cargar los turnos</span>
+        <span style={{ color: '#64748b', fontSize: '0.82rem' }}>
+          Verificá tu conexión y recargá la página.
+        </span>
+      </div>
+    )
+  }
 
   if (hours.length === 0) {
     return (
@@ -629,7 +654,7 @@ function MobileDayGrid({
   const pastDay = differenceInCalendarDays(date, today) < 0
   const isToday = isSameDay(date, today)
 
-  const { data: slots } = useSlots({
+  const { data: slots, isError: slotsError } = useSlots({
     canchaId,
     fecha: fechaISO,
     duracionMin,
@@ -682,7 +707,26 @@ function MobileDayGrid({
         </div>
       </div>
 
-      {!slots || slots.length === 0 ? (
+      {slotsError ? (
+        <div
+          style={{
+            textAlign: 'center',
+            padding: 30,
+            color: '#dc2626',
+            fontSize: '0.88rem',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 8,
+          }}
+        >
+          <span>⚠️</span>
+          <span style={{ fontWeight: 700 }}>No se pudieron cargar los turnos</span>
+          <span style={{ color: '#64748b', fontSize: '0.8rem' }}>
+            Verificá tu conexión y recargá la página.
+          </span>
+        </div>
+      ) : !slots || slots.length === 0 ? (
         <div style={{ textAlign: 'center', padding: 30, color: '#64748b', fontSize: '0.9rem' }}>
           Sin horarios disponibles este día.
         </div>
