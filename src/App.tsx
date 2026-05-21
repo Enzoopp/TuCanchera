@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Outlet, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { Component, type ErrorInfo, type ReactNode } from 'react'
 import { AuthProvider } from '@/context/AuthContext'
 import { TenantProvider } from '@/context/TenantContext'
 import { useAuth } from '@/context/AuthContext'
@@ -25,6 +26,77 @@ import ResumenesMensuales from '@/pages/admin/ResumenesMensuales'
 import InvitarAdmin from '@/pages/superadmin/InvitarAdmin'
 import { Toaster } from '@/components/ui/sonner'
 import CompletarPerfilModal, { useDeberiaCompletarPerfil } from '@/components/CompletarPerfilModal'
+
+// ErrorBoundary global: muestra un mensaje legible en lugar de pantalla en blanco
+// cuando un componente tira un error no capturado durante el render.
+class AppErrorBoundary extends Component<
+  { children: ReactNode },
+  { error: Error | null }
+> {
+  constructor(props: { children: ReactNode }) {
+    super(props)
+    this.state = { error: null }
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { error }
+  }
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error('[AppErrorBoundary]', error, info.componentStack)
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div
+          style={{
+            minHeight: '100vh',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 16,
+            background: '#f8fafc',
+            fontFamily: "'DM Sans', sans-serif",
+            padding: 24,
+            textAlign: 'center',
+          }}
+        >
+          <span style={{ fontSize: '2.5rem' }}>⚠️</span>
+          <h2
+            style={{
+              fontFamily: "'Space Grotesk', sans-serif",
+              fontSize: '1.25rem',
+              fontWeight: 800,
+              color: '#0f172a',
+              margin: 0,
+            }}
+          >
+            Ocurrió un error inesperado
+          </h2>
+          <p style={{ color: '#64748b', margin: 0, maxWidth: 420 }}>
+            {this.state.error.message}
+          </p>
+          <button
+            onClick={() => window.location.reload()}
+            style={{
+              marginTop: 8,
+              padding: '10px 22px',
+              borderRadius: 10,
+              border: 'none',
+              background: '#2563eb',
+              color: 'white',
+              fontWeight: 700,
+              cursor: 'pointer',
+              fontSize: '0.9rem',
+            }}
+          >
+            Recargar página
+          </button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -67,6 +139,7 @@ function TenantLayout() {
 
 function App() {
   return (
+    <AppErrorBoundary>
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <BrowserRouter>
@@ -121,6 +194,7 @@ function App() {
         </BrowserRouter>
       </AuthProvider>
     </QueryClientProvider>
+    </AppErrorBoundary>
   )
 }
 
