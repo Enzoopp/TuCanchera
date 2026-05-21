@@ -561,5 +561,3 @@ export async function fetchReservasConfirmadasRango(
   if (error) throw error
   return data as never
 }
-rn data as never
-}
