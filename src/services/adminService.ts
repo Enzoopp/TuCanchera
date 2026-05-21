@@ -65,7 +65,7 @@ export async function slugDisponible(slug: string): Promise<boolean> {
 
 export async function updateComplejo(
   id: string,
-  patch: Partial<Pick<Complejo, 'nombre' | 'descripcion' | 'direccion' | 'logo_url'>>
+  patch: Partial<Pick<Complejo, 'nombre' | 'descripcion' | 'direccion' | 'logo_url' | 'ciudad'>>
 ): Promise<Complejo> {
   const { data, error } = await supabase
     .from('complejos')
@@ -502,7 +502,7 @@ export async function fetchReservasArchivadas(
 ): Promise<ReservaAdmin[]> {
   const { data, error } = await supabase
     .from('reservas_archivadas')
-    .select('id, cancha_id, cliente_id, fecha, hora_inicio, hora_fin, metodo_pago, estado, mp_payment_id, asistio, creado_en')
+    .select('id, cancha_id, cliente_id, fecha, hora_inicio, hora_fin, metodo_pago, estado, precio, mp_payment_id, asistio, creado_en')
     .eq('complejo_id', complejoId)
     .eq('archivado_por_anio', anio)
     .eq('archivado_por_mes', mes)
@@ -560,4 +560,6 @@ export async function fetchReservasConfirmadasRango(
     .order('fecha', { ascending: true })
   if (error) throw error
   return data as never
+}
+rn data as never
 }

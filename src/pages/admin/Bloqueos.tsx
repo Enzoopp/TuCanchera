@@ -1330,3 +1330,134 @@ function Toast({ message }: { message: string }) {
     document.body
   )
 }
+
+// -------------------------------------------------------------------------
+// WeeklyAdminGrid -- vista semanal (7 columnas x franjas horarias)
+// -------------------------------------------------------------------------
+const DAY_LABELS_ADMIN = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
+
+function fmtYMD(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function WeeklyAdminGrid({
+  fecha,
+  canchaId,
+  duracionMin,
+  onSlotClick,
+}: {
+  fecha: string
+  canchaId: string
+  duracionMin: number
+  onSlotClick: (f: string, slot: Slot) => void
+}) {
+  const weekDates = useMemo(() => {
+    const base = new Date(fecha + 'T12:00:00')
+    const monday = startOfWeek(base, { weekStartsOn: 1 })
+    return Array.from({ length: 7 }, (_, i) => addDays(monday, i))
+  }, [fecha])
+
+  const dayStrings = weekDates.map(fmtYMD)
+
+  // 7 calls unrolled -- rules-of-hooks requires stable call count
+  const q0 = useSlots({ canchaId, fecha: dayStrings[0], duracionMin })
+  const q1 = useSlots({ canchaId, fecha: dayStrings[1], duracionMin })
+  const q2 = useSlots({ canchaId, fecha: dayStrings[2], duracionMin })
+  const q3 = useSlots({ canchaId, fecha: dayStrings[3], duracionMin })
+  const q4 = useSlots({ canchaId, fecha: dayStrings[4], duracionMin })
+  const q5 = useSlots({ canchaId, fecha: dayStrings[5], duracionMin })
+  const q6 = useSlots({ canchaId, fecha: dayStrings[6], duracionMin })
+  const dayQueries = [q0, q1, q2, q3, q4, q5, q6]
+
+  const hoursSet = new Set<string>()
+  dayQueries.forEach((q) => {
+    ;(q.data ?? []).forEach((s) => hoursSet.add(s.horaInicio))
+  })
+  const hours = Array.from(hoursSet).sort()
+
+  if (hours.length === 0) return <EmptyState />
+
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <div style={{ minWidth: 520 }}>
+        {/* Legend */}
+        <div style={{ display: 'flex', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
+          {(
+            [
+              { label: 'Libre', bg: '#f0fdf4', border: '#bbf7d0' },
+              { label: 'Bloqueado', bg: '#1e293b', border: '#0f172a' },
+              { label: 'Reservado', bg: '#eff6ff', border: '#bfdbfe' },
+            ] as const
+          ).map((l) => (
+            <div key={l.label} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '0.78rem', color: '#64748b' }}>
+              <span style={{ width: 12, height: 12, borderRadius: 3, background: l.bg, border: `1.5px solid ${l.border}`, display: 'inline-block' }} />
+              {l.label}
+            </div>
+          ))}
+        </div>
+
+        {/* Day headers */}
+        <div style={{ display: 'grid', gridTemplateColumns: '48px repeat(7, 1fr)', gap: 5, marginBottom: 8 }}>
+          <div />
+          {weekDates.map((d, i) => (
+            <div key={i} style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '0.7rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>
+                {DAY_LABELS_ADMIN[i]}
+              </div>
+              <div style={{ fontSize: '0.88rem', fontWeight: 800, color: '#0f172a', fontFamily: "'Space Grotesk', sans-serif" }}>
+                {d.getDate()}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Slot rows */}
+        {hours.map((h) => (
+          <div
+            key={h}
+            style={{ display: 'grid', gridTemplateColumns: '48px repeat(7, 1fr)', gap: 5, marginBottom: 5, alignItems: 'center' }}
+          >
+            <span style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: 600, fontFamily: "'Space Grotesk', sans-serif" }}>
+              {h.slice(0, 5)}
+            </span>
+            {dayStrings.map((dayStr, di) => {
+              const daySlots = dayQueries[di].data ?? []
+              const slot = daySlots.find((s) => s.horaInicio === h)
+              if (!slot) {
+                return (
+                  <div
+                    key={dayStr}
+                    style={{ height: 34, borderRadius: 7, background: '#f8fafc', border: '1px dashed #e2e8f0' }}
+                  />
+                )
+              }
+              const isFree = slot.estado === 'libre'
+              const isBlocked = slot.estado === 'bloqueado'
+              return (
+                <button
+                  key={dayStr}
+                  type="button"
+                  disabled={!isFree}
+                  onClick={() => isFree && onSlotClick(dayStr, slot)}
+                  title={isFree ? 'Clic para bloquear' : isBlocked ? 'Bloqueado' : 'Reservado'}
+                  style={{
+                    height: 34,
+                    borderRadius: 7,
+                    border: `1.5px solid ${isFree ? '#bbf7d0' : isBlocked ? '#0f172a' : '#bfdbfe'}`,
+                    background: isFree ? '#f0fdf4' : isBlocked ? '#1e293b' : '#eff6ff',
+                    cursor: isFree ? 'pointer' : 'not-allowed',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  {isBlocked && <Ban size={11} color="#f87171" />}
+                </button>
+              )
+            })}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
