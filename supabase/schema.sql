@@ -29,6 +29,29 @@ RETURNS TEXT AS $$
 $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public;
 
 -- ============================================================================
+-- FUNCIÓN: get_clientes_mi_complejo()
+-- Propósito: Devuelve los UUIDs de clientes que reservaron en el complejo del
+-- admin autenticado. SECURITY DEFINER para evitar recursión en profiles_select:
+-- si la policy de profiles hiciera este JOIN inline, al evaluar profiles→reservas
+-- volvería a evaluar profiles (bucle infinito → 500).
+-- ============================================================================
+CREATE OR REPLACE FUNCTION public.get_clientes_mi_complejo()
+RETURNS SETOF UUID
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public
+AS $$
+  SELECT DISTINCT r.cliente_id
+  FROM   public.reservas  r
+  JOIN   public.canchas   ca ON ca.id = r.cancha_id
+  JOIN   public.complejos co ON co.id = ca.complejo_id
+  WHERE  co.admin_id = (
+    SELECT id FROM public.profiles WHERE user_id = auth.uid()
+  );
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.get_clientes_mi_complejo() FROM PUBLIC;
+GRANT  EXECUTE ON FUNCTION public.get_clientes_mi_complejo() TO authenticated;
+
+-- ============================================================================
 -- TABLA: profiles
 -- Propósito: Extiende auth.users con nombre, teléfono, email y rol.
 -- Se crea automáticamente via trigger al confirmar el email o registrarse.
@@ -335,23 +358,16 @@ ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 
 -- El usuario ve su propio perfil.
 -- El admin ve solo clientes que reservaron en su complejo (+ su propio perfil admin).
+-- Usa get_clientes_mi_complejo() (SECURITY DEFINER) para evitar recursión RLS.
 CREATE POLICY "profiles_select"
   ON profiles FOR SELECT
   USING (
     (SELECT auth.uid()) = user_id
-    OR
-    (
+    OR (
       get_my_rol() = 'admin'
       AND (
         rol = 'admin'
-        OR id IN (
-          SELECT DISTINCT r.cliente_id
-          FROM reservas r
-          JOIN canchas ca ON ca.id = r.cancha_id
-          JOIN complejos co ON co.id = ca.complejo_id
-          JOIN profiles p_admin ON p_admin.id = co.admin_id
-          WHERE p_admin.user_id = (SELECT auth.uid())
-        )
+        OR id IN (SELECT get_clientes_mi_complejo())
       )
     )
   );
