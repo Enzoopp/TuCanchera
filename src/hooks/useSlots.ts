@@ -51,6 +51,9 @@ export function useSlots({ canchaId, fecha, duracionMin, precioBase, franjas }: 
 
   // Realtime: invalida la query cuando cambian reservas o bloqueos
   // para esta cancha+fecha específica, sin recargar toda la página.
+  // IMPORTANTE: el channelName incluye instanceId para evitar que múltiples
+  // instancias del hook con el mismo canchaId+fecha colisionen en Supabase Realtime
+  // (WeekGrid y MobileDayGrid se montan simultáneamente y compartirían el mismo canal).
   useEffect(() => {
     if (!canchaId || !fecha) return
 

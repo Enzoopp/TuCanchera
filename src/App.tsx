@@ -140,60 +140,60 @@ function TenantLayout() {
 function App() {
   return (
     <AppErrorBoundary>
-    <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <BrowserRouter>
-          <Routes>
-            {/* Raíz: redirige según estado de auth */}
-            <Route path="/" element={<RootRedirect />} />
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <BrowserRouter>
+            <Routes>
+              {/* Raíz: redirige según estado de auth */}
+              <Route path="/" element={<RootRedirect />} />
 
-            {/* Rutas públicas de autenticación */}
-            <Route path="/login" element={<Login />} />
-            <Route path="/register" element={<Register />} />
-            {/* /register-admin eliminado — los admins se crean por invitación */}
-            <Route path="/forgot-password" element={<ForgotPassword />} />
-            <Route path="/reset-password" element={<ResetPassword />} />
-            <Route path="/auth/callback" element={<AuthCallback />} />
+              {/* Rutas públicas de autenticación */}
+              <Route path="/login" element={<Login />} />
+              <Route path="/register" element={<Register />} />
+              {/* /register-admin eliminado — los admins se crean por invitación */}
+              <Route path="/forgot-password" element={<ForgotPassword />} />
+              <Route path="/reset-password" element={<ResetPassword />} />
+              <Route path="/auth/callback" element={<AuthCallback />} />
 
-            {/* Explorar complejos (pública) */}
-            <Route path="/explorar" element={<Landing />} />
+              {/* Explorar complejos (pública) */}
+              <Route path="/explorar" element={<Landing />} />
 
-            {/* Rutas protegidas: cualquier rol autenticado */}
-            <Route element={<ProtectedRoute />}>
-              <Route path="/mis-reservas" element={<MisReservas />} />
-              <Route path="/perfil" element={<Perfil />} />
-            </Route>
-
-            {/* Ruta superadmin */}
-            <Route element={<ProtectedRoute rol="superadmin" />}>
-              <Route path="/superadmin" element={<InvitarAdmin />} />
-            </Route>
-
-            {/* Rutas admin */}
-            <Route element={<ProtectedRoute rol="admin" />}>
-              <Route path="/admin" element={<AdminLayout />}>
-                <Route index element={<Navigate to="dashboard" replace />} />
-                <Route path="dashboard" element={<Dashboard />} />
-                <Route path="complejo" element={<GestionComplejo />} />
-                <Route path="canchas" element={<GestionCanchas />} />
-                <Route path="bloqueos" element={<Bloqueos />} />
-                <Route path="reservas" element={<ReservasAdmin />} />
-                <Route path="estadisticas" element={<Estadisticas />} />
-                <Route path="resumenes" element={<ResumenesMensuales />} />
+              {/* Rutas protegidas: cualquier rol autenticado */}
+              <Route element={<ProtectedRoute />}>
+                <Route path="/mis-reservas" element={<MisReservas />} />
+                <Route path="/perfil" element={<Perfil />} />
               </Route>
-            </Route>
 
-            {/* Rutas del complejo por slug (tenant) */}
-            <Route path="/:slug" element={<TenantLayout />}>
-              <Route index element={<Complejo />} />
-              <Route path="reservar/:canchaId" element={<Reservar />} />
-            </Route>
-          </Routes>
-          <Toaster />
-          <PerfilModalGlobal />
-        </BrowserRouter>
-      </AuthProvider>
-    </QueryClientProvider>
+              {/* Ruta superadmin */}
+              <Route element={<ProtectedRoute rol="superadmin" />}>
+                <Route path="/superadmin" element={<InvitarAdmin />} />
+              </Route>
+
+              {/* Rutas admin */}
+              <Route element={<ProtectedRoute rol="admin" />}>
+                <Route path="/admin" element={<AdminLayout />}>
+                  <Route index element={<Navigate to="dashboard" replace />} />
+                  <Route path="dashboard" element={<Dashboard />} />
+                  <Route path="complejo" element={<GestionComplejo />} />
+                  <Route path="canchas" element={<GestionCanchas />} />
+                  <Route path="bloqueos" element={<Bloqueos />} />
+                  <Route path="reservas" element={<ReservasAdmin />} />
+                  <Route path="estadisticas" element={<Estadisticas />} />
+                  <Route path="resumenes" element={<ResumenesMensuales />} />
+                </Route>
+              </Route>
+
+              {/* Rutas del complejo por slug (tenant) */}
+              <Route path="/:slug" element={<TenantLayout />}>
+                <Route index element={<Complejo />} />
+                <Route path="reservar/:canchaId" element={<Reservar />} />
+              </Route>
+            </Routes>
+            <Toaster />
+            <PerfilModalGlobal />
+          </BrowserRouter>
+        </AuthProvider>
+      </QueryClientProvider>
     </AppErrorBoundary>
   )
 }
