@@ -98,7 +98,7 @@ export default function AuthShell({
               {subtitle}
             </p>
           )}
-          {heroFooter}
+          <div className="auth-hero-footer">{heroFooter}</div>
         </div>
       </div>
 
@@ -122,10 +122,16 @@ export default function AuthShell({
       <style>{`
         @media (max-width: 900px) {
           .auth-shell { flex-direction: column; }
-          .auth-shell .auth-left { flex: 0 0 auto; min-height: 260px; padding: 40px 28px; }
+          .auth-shell .auth-left { flex: 0 0 auto; min-height: 300px; padding: 40px 28px; }
           .auth-shell .auth-left > div[style*="top: 48px"] { top: 24px; left: 28px; }
           .auth-shell .auth-left h1 { font-size: 2rem !important; }
           .auth-shell .auth-right { padding: 36px 24px; }
+          .auth-hero-footer { display: none; }
+        }
+        @media (max-width: 480px) {
+          .auth-shell .auth-left { min-height: 240px; padding: 32px 20px; }
+          .auth-shell .auth-left h1 { font-size: 1.65rem !important; }
+          .auth-shell .auth-right { padding: 28px 20px 48px; }
         }
       `}</style>
     </div>

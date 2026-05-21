@@ -146,7 +146,7 @@ export default function Landing() {
           }}
         />
         <div
-          className="page-enter"
+          className="page-enter landing-hero-inner"
           style={{
             position: 'relative',
             zIndex: 1,
@@ -397,7 +397,7 @@ export default function Landing() {
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
               gap: 24,
             }}
           >
@@ -411,7 +411,7 @@ export default function Landing() {
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
               gap: 24,
             }}
           >
@@ -515,6 +515,10 @@ export default function Landing() {
 
       <style>{`
         @media (max-width: 600px) {
+          /* Reduce hero padding on small phones */
+          .landing-hero-inner {
+            padding: 88px 20px 56px !important;
+          }
           /* Stack search bar vertically on mobile */
           .landing-search {
             flex-direction: column !important;
@@ -538,6 +542,11 @@ export default function Landing() {
           }
           .landing-search-sport select {
             width: 100% !important;
+          }
+        }
+        @media (max-width: 400px) {
+          .landing-hero-inner {
+            padding: 80px 16px 48px !important;
           }
         }
       `}</style>

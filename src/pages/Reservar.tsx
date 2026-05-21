@@ -181,6 +181,7 @@ export default function Reservar() {
 
         {/* Court info card */}
         <div
+          className="reservar-info-card"
           style={{
             background: 'white',
             borderRadius: 14,
@@ -444,6 +445,12 @@ export default function Reservar() {
           .reservar-desktop-grid { display: none; }
           .reservar-mobile-grid { display: block; }
           .reservar-mobile-nav { display: flex !important; }
+        }
+        @media (max-width: 480px) {
+          .reservar-info-card {
+            padding: 14px 16px !important;
+            gap: 12px !important;
+          }
         }
       `}</style>
     </div>

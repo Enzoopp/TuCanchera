@@ -390,7 +390,7 @@ function ReservationCard({
           minWidth: 0,
         }}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+        <div className="reserva-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
           <div style={{ minWidth: 0 }}>
             <h3
               style={{
@@ -412,6 +412,7 @@ function ReservationCard({
             )}
           </div>
           <span
+            className="reserva-card-badge"
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -422,6 +423,7 @@ function ReservationCard({
               fontSize: '0.78rem',
               fontWeight: 700,
               whiteSpace: 'nowrap',
+              flexShrink: 0,
             }}
           >
             {cfg.label}
@@ -592,6 +594,16 @@ function ReservationCard({
         @media (max-width: 640px) {
           .reserva-card { flex-direction: row; }
           .reserva-card-bottom { gap: 10px !important; }
+        }
+        @media (max-width: 480px) {
+          .reserva-card-header {
+            flex-direction: column !important;
+            align-items: flex-start !important;
+            gap: 6px !important;
+          }
+          .reserva-card-badge {
+            align-self: flex-start;
+          }
         }
       `}</style>
     </div>
