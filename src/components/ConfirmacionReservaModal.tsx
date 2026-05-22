@@ -74,8 +74,18 @@ export default function ConfirmacionReservaModal({
   const [procesando, setProcesando] = useState<'mp' | 'lugar' | null>(null)
   const [confirmada, setConfirmada] = useState(false)
   const [metodoConfirmado, setMetodoConfirmado] = useState<'mp' | 'lugar' | null>(null)
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 540)
 
   const palette = sportPalette(sportLabel(cancha.tipo))
+
+  // Detect mobile for bottom-sheet layout
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 540px)')
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches)
+    mq.addEventListener('change', handler)
+    setIsMobile(mq.matches)
+    return () => mq.removeEventListener('change', handler)
+  }, [])
 
   // Lock body scroll + Escape
   useEffect(() => {
@@ -135,9 +145,9 @@ export default function ConfirmacionReservaModal({
         inset: 0,
         zIndex: 100,
         display: 'flex',
-        alignItems: 'center',
+        alignItems: isMobile ? 'flex-end' : 'center',
         justifyContent: 'center',
-        padding: 16,
+        padding: isMobile ? 0 : 16,
         fontFamily: "'DM Sans', sans-serif",
       }}
     >
@@ -161,14 +171,15 @@ export default function ConfirmacionReservaModal({
           position: 'relative',
           zIndex: 1,
           width: '100%',
-          maxWidth: 500,
-          maxHeight: 'calc(100vh - 32px)',
+          maxWidth: isMobile ? '100%' : 500,
+          maxHeight: isMobile ? '92dvh' : 'calc(100vh - 32px)',
           overflowY: 'auto',
           background: 'white',
-          borderRadius: 20,
+          borderRadius: isMobile ? '20px 20px 0 0' : 20,
           boxShadow: '0 20px 60px rgba(15, 23, 42, 0.25)',
           border: '1px solid #e2e8f0',
-          animation: 'popIn 0.25s cubic-bezier(0.34, 1.56, 0.64, 1)',
+          animation: isMobile ? 'slideUp 0.3s cubic-bezier(0.32, 0.72, 0, 1)' : 'popIn 0.25s cubic-bezier(0.34, 1.56, 0.64, 1)',
+          paddingBottom: isMobile ? 'env(safe-area-inset-bottom, 0px)' : undefined,
         }}
       >
         {confirmada ? (

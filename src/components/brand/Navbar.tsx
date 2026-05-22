@@ -4,7 +4,7 @@
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 import Logo from './Logo'
-import { LogOut, User as UserIcon } from 'lucide-react'
+import { LogOut, User as UserIcon, UserCircle } from 'lucide-react'
 
 interface NavbarProps {
   transparent?: boolean // para heros full-bleed: fondo transparente, texto blanco
@@ -107,6 +107,28 @@ export default function Navbar({ transparent = false }: NavbarProps) {
                   <UserIcon size={15} /> Mis reservas
                 </Link>
               )}
+              {user && (
+                <Link
+                  to="/perfil"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '8px 14px',
+                    borderRadius: 10,
+                    background: '#f8fafc',
+                    color: '#0f172a',
+                    fontWeight: 600,
+                    fontSize: '0.88rem',
+                    textDecoration: 'none',
+                    border: '1px solid #e2e8f0',
+                    transition: 'background 0.15s',
+                  }}
+                >
+                  <UserCircle size={15} />
+                  Mi perfil
+                </Link>
+              )}
               <button
                 onClick={async () => {
                   await signOut()
@@ -177,8 +199,7 @@ export default function Navbar({ transparent = false }: NavbarProps) {
           .navbar-nav { gap: 4px !important; }
           .navbar-login-full { display: none; }
           .navbar-login-short { display: inline; }
-          .navbar-login-link { padding: 7px 10px !important; font-size: 0.83rem !important; }
-          .navbar-register-link { padding: 8px 12px !important; font-size: 0.83rem !important; }
+          .navbar-login-link { padding: 8px 10px !important; font-size: 0.8rem !important; }
         }
       `}</style>
     </header>

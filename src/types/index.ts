@@ -28,6 +28,7 @@ export interface Complejo {
   slug: string
   descripcion: string | null
   direccion: string | null
+  ciudad: string | null
   logo_url: string | null
   activo: boolean
   creado_en: string

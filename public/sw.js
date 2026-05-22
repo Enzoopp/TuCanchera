@@ -3,7 +3,7 @@
 // Permite funcionamiento offline básico: muestra la shell de la app aunque no
 // haya conexión, y cachea fonts/assets para cargas más rápidas.
 
-const CACHE_NAME = 'tucanchera-v1'
+const CACHE_NAME = 'tucanchera-v2'
 const STATIC_ASSETS = [
   '/',
   '/explorar',

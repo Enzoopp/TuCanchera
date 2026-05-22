@@ -65,7 +65,7 @@ export async function slugDisponible(slug: string): Promise<boolean> {
 
 export async function updateComplejo(
   id: string,
-  patch: Partial<Pick<Complejo, 'nombre' | 'descripcion' | 'direccion' | 'logo_url'>>
+  patch: Partial<Pick<Complejo, 'nombre' | 'descripcion' | 'direccion' | 'logo_url' | 'ciudad'>>
 ): Promise<Complejo> {
   const { data, error } = await supabase
     .from('complejos')
@@ -154,12 +154,17 @@ export async function deleteFotoComplejo(id: string) {
 }
 
 export async function reordenarFotos(fotos: { id: string; orden: number }[]) {
-  // Actualiza orden en batch (una query por foto — OK para <50 fotos)
-  await Promise.all(
+  // Una query por foto vía Promise.all.
+  // Para galerías de ≤ 10 imágenes (caso de uso habitual) el overhead es mínimo.
+  // Si en el futuro se permiten galerías grandes, reemplazar por una función
+  // PG que reciba un array JSONB y haga un UPDATE … FROM (VALUES …) en un solo round-trip.
+  const results = await Promise.all(
     fotos.map((f) =>
       supabase.from('fotos_complejo').update({ orden: f.orden }).eq('id', f.id)
     )
   )
+  const firstError = results.find((r) => r.error)?.error
+  if (firstError) throw firstError
 }
 
 // ---------- Canchas ----------
@@ -340,12 +345,19 @@ export async function registrarAsistencia(id: string, asistio: boolean) {
   // UPDATED o ALREADY_MARKED → éxito
 }
 
+/**
+ * Cancela una reserva como admin de forma segura vía RPC.
+ * La función PG cancelar_reserva_admin() verifica que la reserva
+ * pertenece al complejo del admin antes de actualizar, centralizando
+ * la lógica de negocio y facilitando agregar notificaciones en el futuro.
+ */
 export async function cancelarReservaAdmin(id: string) {
-  const { error } = await supabase
-    .from('reservas')
-    .update({ estado: 'cancelada_admin' })
-    .eq('id', id)
+  const { data, error } = await supabase
+    .rpc('cancelar_reserva_admin', { p_reserva_id: id })
   if (error) throw error
+  if (!data?.ok) {
+    throw new Error(data?.msg ?? 'No se pudo cancelar la reserva.')
+  }
 }
 
 // ---------- Cierre mensual ----------
@@ -490,7 +502,7 @@ export async function fetchReservasArchivadas(
 ): Promise<ReservaAdmin[]> {
   const { data, error } = await supabase
     .from('reservas_archivadas')
-    .select('id, cancha_id, cliente_id, fecha, hora_inicio, hora_fin, metodo_pago, estado, mp_payment_id, asistio, creado_en')
+    .select('id, cancha_id, cliente_id, fecha, hora_inicio, hora_fin, metodo_pago, estado, precio, mp_payment_id, asistio, creado_en')
     .eq('complejo_id', complejoId)
     .eq('archivado_por_anio', anio)
     .eq('archivado_por_mes', mes)

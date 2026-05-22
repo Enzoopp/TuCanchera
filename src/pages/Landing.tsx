@@ -32,6 +32,15 @@ interface ComplejoEnriquecido extends Complejo {
   priceFrom: number | null
 }
 
+// Helper: extrae ciudades únicas de una lista de complejos
+function getCiudades(complejos: ComplejoEnriquecido[]): string[] {
+  const set = new Set<string>()
+  for (const c of complejos) {
+    if (c.ciudad) set.add(c.ciudad.trim())
+  }
+  return Array.from(set).sort()
+}
+
 async function fetchAllCanchasActivas(): Promise<Cancha[]> {
   const { data, error } = await supabase
     .from('canchas')
@@ -52,6 +61,7 @@ export default function Landing() {
 
   const [sport, setSport] = useState<SportFilter>('Todos')
   const [search, setSearch] = useState('')
+  const [ciudadFilter, setCiudadFilter] = useState('Todas')
 
   const { data: complejos, isLoading: loadingComplejos } = useQuery({
     queryKey: ['complejos-activos'],
@@ -88,18 +98,22 @@ export default function Landing() {
     })
   }, [complejos, canchas])
 
+  const ciudades = useMemo(() => getCiudades(enriquecidos), [enriquecidos])
+
   const filtered = useMemo(() => {
     return enriquecidos.filter((cx) => {
       const matchSport = sport === 'Todos' || cx.sports.includes(sport as 'Fútbol 5' | 'Fútbol 7' | 'Pádel')
+      const matchCiudad = ciudadFilter === 'Todas' || (cx.ciudad?.trim() ?? '') === ciudadFilter
       const q = search.trim().toLowerCase()
       const matchSearch =
         !q ||
         cx.nombre.toLowerCase().includes(q) ||
         (cx.direccion || '').toLowerCase().includes(q) ||
+        (cx.ciudad || '').toLowerCase().includes(q) ||
         cx.sports.some((s) => s.toLowerCase().includes(q))
-      return matchSport && matchSearch
+      return matchSport && matchCiudad && matchSearch
     })
-  }, [enriquecidos, sport, search])
+  }, [enriquecidos, sport, search, ciudadFilter])
 
   return (
     <div style={{ background: '#f8fafc', minHeight: '100vh', fontFamily: "'DM Sans', sans-serif" }}>
@@ -132,7 +146,7 @@ export default function Landing() {
           }}
         />
         <div
-          className="page-enter"
+          className="page-enter landing-hero-inner"
           style={{
             position: 'relative',
             zIndex: 1,
@@ -351,11 +365,39 @@ export default function Landing() {
           </div>
         </div>
 
+        {/* Ciudad filter */}
+        {ciudades.length > 0 && (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 24, alignItems: 'center' }}>
+            <span style={{ fontSize: '0.82rem', color: '#64748b', fontWeight: 600 }}>Ciudad:</span>
+            {['Todas', ...ciudades].map((c) => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => setCiudadFilter(c)}
+                style={{
+                  padding: '5px 14px',
+                  borderRadius: 99,
+                  border: ciudadFilter === c ? '2px solid #2563eb' : '1.5px solid #e2e8f0',
+                  background: ciudadFilter === c ? '#eff6ff' : 'white',
+                  color: ciudadFilter === c ? '#2563eb' : '#64748b',
+                  fontFamily: "'DM Sans', sans-serif",
+                  fontSize: '0.82rem',
+                  fontWeight: ciudadFilter === c ? 700 : 500,
+                  cursor: 'pointer',
+                  transition: 'all 0.15s',
+                }}
+              >
+                {c}
+              </button>
+            ))}
+          </div>
+        )}
+
         {loadingComplejos || loadingCanchas ? (
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
               gap: 24,
             }}
           >
@@ -369,7 +411,7 @@ export default function Landing() {
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
               gap: 24,
             }}
           >
@@ -473,6 +515,10 @@ export default function Landing() {
 
       <style>{`
         @media (max-width: 600px) {
+          /* Reduce hero padding on small phones */
+          .landing-hero-inner {
+            padding: 88px 20px 56px !important;
+          }
           /* Stack search bar vertically on mobile */
           .landing-search {
             flex-direction: column !important;
@@ -496,6 +542,11 @@ export default function Landing() {
           }
           .landing-search-sport select {
             width: 100% !important;
+          }
+        }
+        @media (max-width: 400px) {
+          .landing-hero-inner {
+            padding: 80px 16px 48px !important;
           }
         }
       `}</style>
@@ -681,28 +732,28 @@ function EmptyState() {
           width: 56,
           height: 56,
           margin: '0 auto 16px',
-          borderRadius: 99,
-          background: '#eff6ff',
+          background: '#f1f5f9',
+          borderRadius: '50%',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
         }}
       >
-        <Building2 size={24} color="#2563eb" />
+        <Search size={24} color="#94a3b8" />
       </div>
       <h3
         style={{
           fontFamily: "'Space Grotesk', sans-serif",
-          fontSize: '1.05rem',
-          fontWeight: 800,
+          fontSize: '1.1rem',
+          fontWeight: 700,
           color: '#0f172a',
-          margin: '0 0 6px',
+          margin: '0 0 8px',
         }}
       >
-        No encontramos complejos
+        Sin resultados
       </h3>
-      <p style={{ color: '#64748b', fontSize: '0.9rem', maxWidth: 420, margin: '0 auto' }}>
-        Probá con otro filtro o volvé pronto — estamos sumando nuevos complejos todas las semanas.
+      <p style={{ color: '#64748b', fontSize: '0.9rem', margin: 0 }}>
+        No encontramos complejos con esos filtros. Probá cambiando la búsqueda.
       </p>
     </div>
   )

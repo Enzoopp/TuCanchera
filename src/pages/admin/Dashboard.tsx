@@ -16,9 +16,10 @@ import {
   registrarAsistencia,
   type ReservaAdmin,
 } from '@/services/adminService'
-import { fetchCanchasByComplejo, fetchBloqueosByCancha } from '@/services/complejoService'
+import { fetchCanchasByComplejo, fetchBloqueosByCancha, fetchHorariosByCancha } from '@/services/complejoService'
 import { formatearFechaISO } from '@/utils/fechas'
 import { supabase } from '@/lib/supabase'
+import { generarSlots } from '@/utils/slots'
 import SportIcon, { sportPalette, sportLabel } from '@/components/brand/SportIcon'
 import {
   Calendar,
@@ -33,7 +34,7 @@ import {
   UserCheck,
   UserX,
 } from 'lucide-react'
-import type { TipoCancha } from '@/types'
+import type { TipoCancha, HorarioCancha, Reserva, Bloqueo } from '@/types'
 
 const DAY_INITIALS = ['L', 'M', 'M', 'J', 'V', 'S', 'D']
 const MONTHS_LONG = [
@@ -112,6 +113,33 @@ export default function Dashboard() {
       return arrs.flat()
     },
     enabled: !!canchas && canchas.length > 0,
+  })
+
+  // Ocupación: horarios + reservas + bloqueos por cancha para el mapa visual
+  const { data: ocupacionData } = useQuery({
+    queryKey: ['admin-ocupacion-hoy', complejo?.id, hoy, canchas?.length],
+    queryFn: async () => {
+      if (!canchas) return []
+      return Promise.all(
+        canchas.filter((c) => c.activa).map(async (cancha) => {
+          const diaSemana = new Date(hoy + 'T12:00:00').getDay()
+          const [horarios, reservasCancha, bloqueosCancha] = await Promise.all([
+            fetchHorariosByCancha(cancha.id),
+            (reservas ?? []).filter((r) => r.cancha_id === cancha.id) as Reserva[],
+            (bloqueos ?? []).filter((b) => b.cancha_id === cancha.id) as Bloqueo[],
+          ])
+          const horariosHoy = (horarios as HorarioCancha[]).filter(
+            (h) => h.dia_semana === diaSemana
+          )
+          const slots = generarSlots(
+            horariosHoy, reservasCancha, bloqueosCancha,
+            cancha.duracion_min, cancha.precio, cancha.franjas_precio
+          )
+          return { cancha, slots }
+        })
+      )
+    },
+    enabled: !!canchas && canchas.length > 0 && !!reservas && !!bloqueos,
   })
 
   const [canchaFilter, setCanchaFilter] = useState<string>('todas')
@@ -341,6 +369,11 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* ── Mapa de ocupación del día ── */}
+      {ocupacionData && ocupacionData.length > 0 && (
+        <OcupacionHoy data={ocupacionData} hoy={hoy} />
+      )}
+
       <style>{`
         @media (max-width: 980px) {
           .dashboard-main-grid {
@@ -353,6 +386,126 @@ export default function Dashboard() {
           }
         }
       `}</style>
+    </div>
+  )
+}
+
+
+/* -------------------------------------------------------------------------- */
+/*                         Mapa de ocupación del día                         */
+/* -------------------------------------------------------------------------- */
+
+interface SlotInfo {
+  cancha: import('@/types').Cancha
+  slots: import('@/types').Slot[]
+}
+
+function OcupacionHoy({ data, hoy }: { data: SlotInfo[]; hoy: string }) {
+  const libres = data.reduce((a, d) => a + d.slots.filter(s => s.estado === 'libre').length, 0)
+  const ocupados = data.reduce((a, d) => a + d.slots.filter(s => s.estado === 'ocupado').length, 0)
+  const bloqueados = data.reduce((a, d) => a + d.slots.filter(s => s.estado === 'bloqueado').length, 0)
+  const total = libres + ocupados + bloqueados
+
+  return (
+    <div style={{
+      background: 'white', borderRadius: 16,
+      border: '1px solid #f1f5f9',
+      boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
+      overflow: 'hidden', marginTop: 8,
+    }}>
+      {/* Header */}
+      <div style={{
+        padding: '16px 22px 12px',
+        borderBottom: '1px solid #f1f5f9',
+        display: 'flex', alignItems: 'center',
+        justifyContent: 'space-between', flexWrap: 'wrap', gap: 12,
+      }}>
+        <div>
+          <h3 style={{
+            fontFamily: "'Space Grotesk', sans-serif",
+            fontSize: '1rem', fontWeight: 800,
+            color: '#0f172a', margin: 0, letterSpacing: '-0.02em',
+          }}>
+            Ocupación de hoy
+          </h3>
+          <p style={{ color: '#64748b', fontSize: '0.8rem', margin: '2px 0 0' }}>
+            {hoy} · {total} turnos totales
+          </p>
+        </div>
+        {/* Summary chips */}
+        <div style={{ display: 'flex', gap: 8 }}>
+          {[
+            { label: `${libres} libres`, bg: '#dcfce7', color: '#15803d' },
+            { label: `${ocupados} reservados`, bg: '#fee2e2', color: '#b91c1c' },
+            { label: `${bloqueados} bloqueados`, bg: '#f1f5f9', color: '#64748b' },
+          ].map((chip) => (
+            <span key={chip.label} style={{
+              padding: '3px 10px', borderRadius: 99,
+              background: chip.bg, color: chip.color,
+              fontSize: '0.75rem', fontWeight: 700,
+            }}>
+              {chip.label}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {/* Grid por cancha */}
+      <div style={{ padding: '12px 22px 18px', overflowX: 'auto' }}>
+        {data.map(({ cancha, slots }) => {
+          if (slots.length === 0) return null
+          const libresPct = total > 0 ? Math.round((slots.filter(s => s.estado === 'libre').length / slots.length) * 100) : 0
+          return (
+            <div key={cancha.id} style={{
+              display: 'flex', alignItems: 'center',
+              gap: 12, marginBottom: 10, minWidth: 0,
+            }}>
+              {/* Cancha name */}
+              <div style={{
+                width: 110, flexShrink: 0,
+                fontSize: '0.82rem', fontWeight: 700,
+                color: '#0f172a', overflow: 'hidden',
+                textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }}>
+                {cancha.nombre}
+              </div>
+              {/* Slot pills */}
+              <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap', flex: 1 }}>
+                {slots.map((s) => {
+                  const bg = s.estado === 'libre' ? '#bbf7d0'
+                    : s.estado === 'ocupado' ? '#fca5a5'
+                    : '#e2e8f0'
+                  const color = s.estado === 'libre' ? '#15803d'
+                    : s.estado === 'ocupado' ? '#b91c1c'
+                    : '#64748b'
+                  return (
+                    <div
+                      key={s.horaInicio}
+                      title={`${s.horaInicio} — ${s.estado}`}
+                      style={{
+                        padding: '3px 8px', borderRadius: 6,
+                        background: bg, color,
+                        fontSize: '0.72rem', fontWeight: 700,
+                        letterSpacing: '-0.01em',
+                      }}
+                    >
+                      {s.horaInicio}
+                    </div>
+                  )
+                })}
+              </div>
+              {/* % libre */}
+              <div style={{
+                flexShrink: 0, fontSize: '0.75rem',
+                fontWeight: 700, color: libresPct > 50 ? '#15803d' : libresPct > 20 ? '#d97706' : '#b91c1c',
+                width: 40, textAlign: 'right',
+              }}>
+                {libresPct}%
+              </div>
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }
