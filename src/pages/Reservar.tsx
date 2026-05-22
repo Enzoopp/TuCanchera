@@ -9,6 +9,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/context/AuthContext'
 import { useTenant } from '@/context/TenantContext'
 import { useSlots } from '@/hooks/useSlots'
+import { useWeekSlots } from '@/hooks/useWeekSlots'
 import { useDocumentMeta } from '@/hooks/useDocumentMeta'
 import { fetchCanchaById } from '@/services/reservaService'
 import Navbar from '@/components/brand/Navbar'
@@ -280,7 +281,12 @@ export default function Reservar() {
             <button
               type="button"
               onClick={() => setWeekOffset((o) => o - 1)}
-              style={navBtnStyle}
+              disabled={weekOffset === 0}
+              style={{
+                ...navBtnStyle,
+                opacity: weekOffset === 0 ? 0.35 : 1,
+                cursor: weekOffset === 0 ? 'not-allowed' : 'pointer',
+              }}
               aria-label="Semana anterior"
             >
               <ChevronLeft size={17} color="#475569" />
@@ -488,31 +494,29 @@ function WeekGrid({
   franjas?: FranjaPrecio[] | null
   onSlotClick: (fecha: string, slot: Slot) => void
 }) {
-  // Unimos los slots de cada día. Usamos 7 queries separadas (longitud estable).
-  const dayStrings = weekDates.map(formatYMD)
-  // Hook calls unrolled para cumplir las rules-of-hooks (longitud estable = 7).
-  const q0 = useSlots({ canchaId, fecha: dayStrings[0], duracionMin, precioBase, franjas })
-  const q1 = useSlots({ canchaId, fecha: dayStrings[1], duracionMin, precioBase, franjas })
-  const q2 = useSlots({ canchaId, fecha: dayStrings[2], duracionMin, precioBase, franjas })
-  const q3 = useSlots({ canchaId, fecha: dayStrings[3], duracionMin, precioBase, franjas })
-  const q4 = useSlots({ canchaId, fecha: dayStrings[4], duracionMin, precioBase, franjas })
-  const q5 = useSlots({ canchaId, fecha: dayStrings[5], duracionMin, precioBase, franjas })
-  const q6 = useSlots({ canchaId, fecha: dayStrings[6], duracionMin, precioBase, franjas })
-  const dayQueries = [q0, q1, q2, q3, q4, q5, q6]
-
-  // Recolectamos todas las horas únicas de toda la semana (por si los horarios
-  // difieren entre días de la semana)
-  const hasError = dayQueries.some((q) => q.isError)
-
-  const hoursSet = new Set<string>()
-  dayQueries.forEach((q) => {
-    ;(q.data || []).forEach((s) => hoursSet.add(s.horaInicio))
+  // Una sola query para toda la semana (3 fetches) en vez de 7 × 3 = 21
+  const { data: weekMap, isError } = useWeekSlots({
+    canchaId,
+    weekDates,
+    duracionMin,
+    precioBase,
+    franjas,
   })
-  const hours = Array.from(hoursSet).sort()
+
+  const dayStrings = weekDates.map(formatYMD)
+
+  // Recolectamos todas las horas únicas de toda la semana
+  const hours = useMemo(() => {
+    const set = new Set<string>()
+    for (const fecha of dayStrings) {
+      for (const s of (weekMap?.[fecha] ?? [])) set.add(s.horaInicio)
+    }
+    return Array.from(set).sort()
+  }, [weekMap, dayStrings])
 
   const today = startOfDay(new Date())
 
-  if (hasError) {
+  if (isError) {
     return (
       <div
         style={{
@@ -535,7 +539,7 @@ function WeekGrid({
     )
   }
 
-  if (hours.length === 0) {
+  if (weekMap && hours.length === 0) {
     return (
       <div style={{ textAlign: 'center', padding: '60px 20px', color: '#64748b', fontSize: '0.9rem' }}>
         Esta cancha no tiene horarios configurados esta semana.
@@ -610,7 +614,7 @@ function WeekGrid({
           </span>
           {weekDates.map((d, di) => {
             const fecha = dayStrings[di]
-            const slots = dayQueries[di].data || []
+            const slots = weekMap?.[fecha] ?? []
             const slot = slots.find((s) => s.horaInicio === h)
             const pastDay = differenceInCalendarDays(d, today) < 0
             const effectiveState = pastDay ? 'ocupado' : slot?.estado

@@ -97,26 +97,18 @@ export default function Reservas() {
       canchaId: filtros.canchaId || undefined,
       estado: filtros.estado || undefined,
       metodoPago: filtros.metodoPago || undefined,
+      desde: filtros.desde || undefined,
+      hasta: filtros.hasta || undefined,
     }),
-    [filtros.canchaId, filtros.estado, filtros.metodoPago]
+    [filtros.canchaId, filtros.estado, filtros.metodoPago, filtros.desde, filtros.hasta]
   )
 
-  const { data: reservasRaw, isLoading } = useQuery({
+  const { data: reservas = [], isLoading } = useQuery({
     queryKey: ['admin-reservas', complejo?.id, filtrosQ],
     queryFn: () => fetchReservasDelComplejo(complejo!.id, filtrosQ),
     enabled: !!complejo,
     refetchInterval: 60_000,
   })
-
-  // Filtrado por rango de fechas (cliente)
-  const reservas = useMemo(() => {
-    if (!reservasRaw) return []
-    return reservasRaw.filter((r) => {
-      if (filtros.desde && r.fecha < filtros.desde) return false
-      if (filtros.hasta && r.fecha > filtros.hasta) return false
-      return true
-    })
-  }, [reservasRaw, filtros.desde, filtros.hasta])
 
   const totalIngresos = useMemo(() => {
     return reservas
@@ -765,7 +757,7 @@ function ReservaRow({
             ))}
 
           {/* Cancelar */}
-          {reserva.estado !== 'cancelada_admin' && reserva.asistio === null ? (
+          {reserva.estado !== 'cancelada_admin' && reserva.estado !== 'cancelada_cliente' && reserva.asistio === null ? (
             <button
               onClick={onCancelar}
               style={{
@@ -791,7 +783,7 @@ function ReservaRow({
             >
               Cancelar
             </button>
-          ) : reserva.estado === 'cancelada_admin' ? (
+          ) : (reserva.estado === 'cancelada_admin' || reserva.estado === 'cancelada_cliente') ? (
             <span style={{ fontSize: '0.76rem', color: '#cbd5e1', fontStyle: 'italic' }}>—</span>
           ) : null}
         </div>

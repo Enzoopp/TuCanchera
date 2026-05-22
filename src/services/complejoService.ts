@@ -74,6 +74,24 @@ export async function fetchReservasConfirmadas(
   return (data ?? []) as DisponibilidadSlot[]
 }
 
+/**
+ * Devuelve todos los slots ocupados/pendientes de una semana completa en una
+ * sola llamada RPC (en lugar de 7 llamadas paralelas por día).
+ */
+export async function fetchReservasSemana(
+  canchaId: string,
+  desde: string,
+  hasta: string
+): Promise<DisponibilidadSlot[]> {
+  const { data, error } = await supabase.rpc('get_disponibilidad_semana', {
+    p_cancha_id: canchaId,
+    p_desde: desde,
+    p_hasta: hasta,
+  })
+  if (error) throw error
+  return (data ?? []) as DisponibilidadSlot[]
+}
+
 export async function fetchBloqueosByCancha(
   canchaId: string,
   fecha: string
@@ -83,6 +101,23 @@ export async function fetchBloqueosByCancha(
     .select('*')
     .eq('cancha_id', canchaId)
     .eq('fecha', fecha)
+
+  if (error) throw error
+  return data as Bloqueo[]
+}
+
+/** Devuelve todos los bloqueos de una cancha en un rango de fechas (una sola query). */
+export async function fetchBloqueosRango(
+  canchaId: string,
+  desde: string,
+  hasta: string
+): Promise<Bloqueo[]> {
+  const { data, error } = await supabase
+    .from('bloqueos')
+    .select('*')
+    .eq('cancha_id', canchaId)
+    .gte('fecha', desde)
+    .lte('fecha', hasta)
 
   if (error) throw error
   return data as Bloqueo[]

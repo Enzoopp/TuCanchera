@@ -274,6 +274,8 @@ export async function fetchReservasDelComplejo(
   filtros?: {
     canchaId?: string
     fecha?: string
+    desde?: string
+    hasta?: string
     estado?: string
     metodoPago?: string
   }
@@ -293,6 +295,8 @@ export async function fetchReservasDelComplejo(
 
   if (filtros?.canchaId) q = q.eq('cancha_id', filtros.canchaId)
   if (filtros?.fecha) q = q.eq('fecha', filtros.fecha)
+  if (filtros?.desde) q = q.gte('fecha', filtros.desde)
+  if (filtros?.hasta) q = q.lte('fecha', filtros.hasta)
   if (filtros?.estado) q = q.eq('estado', filtros.estado)
   if (filtros?.metodoPago) q = q.eq('metodo_pago', filtros.metodoPago)
 

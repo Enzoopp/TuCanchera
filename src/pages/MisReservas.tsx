@@ -2,11 +2,12 @@
 // Diseño replicado de MisReservasPage.jsx (tabs Próximas/Historial +
 // cards con stripe de color + sport icon tile + payment badge).
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/context/AuthContext'
 import { fetchMisReservas, cancelarReservaCliente } from '@/services/reservaService'
+import { supabase } from '@/lib/supabase'
 import Navbar from '@/components/brand/Navbar'
 import SportIcon, { sportLabel, sportPalette } from '@/components/brand/SportIcon'
 import { Calendar, Clock, Search, X } from 'lucide-react'
@@ -48,6 +49,7 @@ type Tab = 'proximas' | 'historial'
 
 export default function MisReservas() {
   const { profile } = useAuth()
+  const queryClient = useQueryClient()
   const [tab, setTab] = useState<Tab>('proximas')
 
   const { data: reservas, isLoading } = useQuery({
@@ -55,6 +57,27 @@ export default function MisReservas() {
     queryFn: () => fetchMisReservas(profile!.id),
     enabled: !!profile,
   })
+
+  // Realtime: si el admin cancela una reserva el cliente la ve al instante
+  useEffect(() => {
+    if (!profile?.id) return
+    const channel = supabase
+      .channel(`mis-reservas-${profile.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'reservas',
+          filter: `cliente_id=eq.${profile.id}`,
+        },
+        () => {
+          void queryClient.invalidateQueries({ queryKey: ['mis-reservas', profile.id] })
+        }
+      )
+      .subscribe()
+    return () => { void supabase.removeChannel(channel) }
+  }, [profile?.id, queryClient])
 
   const { proximas, historial } = useMemo(() => {
     const today = startOfDay(new Date())
@@ -285,6 +308,7 @@ function ReservationCard({
   const [cancelling, setCancelling] = useState(false)
   const [cancelError, setCancelError] = useState<string | null>(null)
   const [confirmCancel, setConfirmCancel] = useState(false)
+  const confirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Estado efectivo: si es pasada y estaba confirmada/pendiente → mostrar como "pasada"
   const isCancelled = r.estado === 'cancelada_admin' || r.estado === 'cancelada_cliente'
@@ -301,7 +325,13 @@ function ReservationCard({
   async function handleCancel() {
     if (!confirmCancel) {
       setConfirmCancel(true)
+      // Auto-resetea si el usuario no confirma en 5 segundos
+      confirmTimerRef.current = setTimeout(() => setConfirmCancel(false), 5000)
       return
+    }
+    if (confirmTimerRef.current) {
+      clearTimeout(confirmTimerRef.current)
+      confirmTimerRef.current = null
     }
     setCancelling(true)
     setCancelError(null)

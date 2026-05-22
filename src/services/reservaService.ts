@@ -36,7 +36,7 @@ export async function crearReservaEnLugar(
       fecha: params.fecha,
       hora_inicio: params.horaInicio,
       hora_fin: params.horaFin,
-      metodo_pago: 'en_lugar',
+      metodo_pago: params.metodoPago,
       estado: 'confirmada',
       precio: params.precio,
     })
