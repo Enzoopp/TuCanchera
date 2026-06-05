@@ -2,6 +2,7 @@
 // Abstrae la comunicación con Supabase para operaciones de reservas.
 
 import { supabase } from '@/lib/supabase'
+import { bffGet, bffPost } from '@/lib/bffClient'
 import type { Cancha, Reserva, MetodoPago } from '@/types'
 
 export async function fetchCanchaById(canchaId: string): Promise<Cancha | null> {
@@ -28,26 +29,20 @@ interface CrearReservaParams {
 export async function crearReservaEnLugar(
   params: CrearReservaParams
 ): Promise<Reserva> {
-  const { data, error } = await supabase
-    .from('reservas')
-    .insert({
-      cancha_id: params.canchaId,
-      cliente_id: params.clienteId,
-      fecha: params.fecha,
-      hora_inicio: params.horaInicio,
-      hora_fin: params.horaFin,
-      metodo_pago: params.metodoPago,
-      estado: 'confirmada',
-      precio: params.precio,
-    })
-    .select()
-    .single()
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) throw new Error('No hay sesión activa')
 
-  if (error) throw error
-  return data as Reserva
+  return bffPost<Reserva>('/api/reservas', {
+    canchaId:   params.canchaId,
+    fecha:      params.fecha,
+    horaInicio: params.horaInicio,
+    horaFin:    params.horaFin,
+    metodoPago: params.metodoPago,
+    precio:     params.precio,
+  }, session.access_token)
 }
 
-export async function fetchMisReservas(clienteId: string): Promise<
+export async function fetchMisReservas(_clienteId: string): Promise<
   Array<
     Reserva & {
       canchas: {
@@ -59,28 +54,10 @@ export async function fetchMisReservas(clienteId: string): Promise<
     }
   >
 > {
-  const { data, error } = await supabase
-    .from('reservas')
-    .select(
-      `
-      *,
-      canchas (
-        nombre,
-        tipo,
-        precio,
-        complejos (
-          nombre,
-          slug
-        )
-      )
-    `
-    )
-    .eq('cliente_id', clienteId)
-    .order('fecha', { ascending: false })
-    .order('hora_inicio', { ascending: false })
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) throw new Error('No hay sesión activa')
 
-  if (error) throw error
-  return data as never
+  return bffGet('/api/reservas', session.access_token)
 }
 
 // Tipos de respuesta para cancelación
@@ -90,9 +67,8 @@ export type CancelResult =
   | { ok: false; code: 'TOO_LATE'; horas_restantes: number }
 
 export async function cancelarReservaCliente(reservaId: string): Promise<CancelResult> {
-  const { data, error } = await supabase.rpc('cancelar_reserva_cliente', {
-    p_reserva_id: reservaId,
-  })
-  if (error) throw error
-  return data as CancelResult
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) throw new Error('No hay sesión activa')
+
+  return bffPost<CancelResult>(`/api/reservas/${reservaId}/cancelar`, {}, session.access_token)
 }

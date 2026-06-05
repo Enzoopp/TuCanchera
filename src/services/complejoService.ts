@@ -3,6 +3,7 @@
 // Si en el futuro se cambia el backend, solo se modifica esta capa.
 
 import { supabase } from '@/lib/supabase'
+import { bffGet } from '@/lib/bffClient'
 import type { Cancha, Complejo, FotoComplejo, HorarioCancha, Bloqueo } from '@/types'
 
 // Tipo mínimo devuelto por la RPC get_disponibilidad_slots.
@@ -16,26 +17,11 @@ export type DisponibilidadSlot = {
 }
 
 export async function fetchComplejosActivos(): Promise<Complejo[]> {
-  const { data, error } = await supabase
-    .from('complejos')
-    .select('*')
-    .eq('activo', true)
-    .order('creado_en', { ascending: false })
-
-  if (error) throw error
-  return data as Complejo[]
+  return bffGet<Complejo[]>('/api/complejos')
 }
 
 export async function fetchCanchasByComplejo(complejoId: string): Promise<Cancha[]> {
-  const { data, error } = await supabase
-    .from('canchas')
-    .select('*')
-    .eq('complejo_id', complejoId)
-    .eq('activa', true)
-    .order('nombre')
-
-  if (error) throw error
-  return data as Cancha[]
+  return bffGet<Cancha[]>(`/api/canchas/${complejoId}`)
 }
 
 export async function fetchFotosByComplejo(complejoId: string): Promise<FotoComplejo[]> {
