@@ -3,7 +3,7 @@
 // Realtime: se suscribe a cambios en reservas y bloqueos para invalidar
 // la query automáticamente sin recargar la página.
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useId } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import {
@@ -24,10 +24,10 @@ interface UseSlotsParams {
 
 export function useSlots({ canchaId, fecha, duracionMin, precioBase, franjas }: UseSlotsParams) {
   const queryClient = useQueryClient()
-  // ID único por instancia del hook: evita colisión de nombres de canal cuando
-  // WeekGrid y MobileDayGrid usan useSlots con el mismo canchaId+fecha
+  // ID único y estable por instancia del hook (useId): evita colisión de nombres
+  // de canal cuando WeekGrid y MobileDayGrid usan useSlots con el mismo canchaId+fecha
   // (ambos están montados simultáneamente, solo uno visible vía CSS).
-  const instanceId = useRef(`${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`)
+  const instanceId = useId()
 
   const query = useQuery<Slot[]>({
     queryKey: ['slots', canchaId, fecha],
@@ -57,7 +57,7 @@ export function useSlots({ canchaId, fecha, duracionMin, precioBase, franjas }: 
   useEffect(() => {
     if (!canchaId || !fecha) return
 
-    const channelName = `slots-${canchaId}-${fecha}-${instanceId.current}`
+    const channelName = `slots-${canchaId}-${fecha}-${instanceId}`
 
     const channel = supabase
       .channel(channelName)
@@ -97,7 +97,7 @@ export function useSlots({ canchaId, fecha, duracionMin, precioBase, franjas }: 
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [canchaId, fecha, queryClient])
+  }, [canchaId, fecha, queryClient, instanceId])
 
   return query
 }

@@ -2,7 +2,7 @@
 // Usa get_disponibilidad_semana RPC para reservas, más una query de bloqueos por rango.
 // Mantiene Realtime: un solo canal por semana (en vez de 7) que invalida toda la semana.
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useId } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import {
@@ -32,7 +32,8 @@ export function useWeekSlots({
   franjas,
 }: UseWeekSlotsParams) {
   const queryClient = useQueryClient()
-  const instanceId = useRef(`${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`)
+  // ID único y estable por instancia del hook (useId) para el nombre del canal Realtime.
+  const instanceId = useId()
 
   const desde = weekDates[0]
     ? `${weekDates[0].getFullYear()}-${String(weekDates[0].getMonth() + 1).padStart(2, '0')}-${String(weekDates[0].getDate()).padStart(2, '0')}`
@@ -81,7 +82,7 @@ export function useWeekSlots({
   // Un solo canal Realtime para toda la semana
   useEffect(() => {
     if (!canchaId || !desde) return
-    const channelName = `week-slots-${canchaId}-${desde}-${instanceId.current}`
+    const channelName = `week-slots-${canchaId}-${desde}-${instanceId}`
 
     const channel = supabase
       .channel(channelName)
@@ -111,7 +112,7 @@ export function useWeekSlots({
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
-  }, [canchaId, desde, hasta, queryClient])
+  }, [canchaId, desde, hasta, queryClient, instanceId])
 
   return query
 }
