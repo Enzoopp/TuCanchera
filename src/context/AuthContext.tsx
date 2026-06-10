@@ -15,6 +15,7 @@ import {
 } from 'react'
 import type { User, Session } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase'
+import { loginViaBff, signupViaBff } from '@/services/authService'
 import type { Profile, Rol } from '@/types'
 
 interface AuthContextValue {
@@ -119,8 +120,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [user?.id])
 
   async function signIn(email: string, password: string) {
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
-    return { error: error ? new Error(error.message) : null }
+    // Login vía BFF: el BFF valida las credenciales contra Supabase Auth y
+    // devuelve los tokens; loginViaBff restaura la sesión con setSession(),
+    // que dispara onAuthStateChange igual que el login directo.
+    try {
+      await loginViaBff(email, password)
+      return { error: null }
+    } catch (err) {
+      return { error: err instanceof Error ? err : new Error('Error al iniciar sesión') }
+    }
   }
 
   async function signUp(
@@ -129,15 +137,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     metadata: { nombre: string; telefono?: string; rol: Rol },
     emailRedirectTo?: string
   ) {
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: metadata,
-        emailRedirectTo: emailRedirectTo ?? `${window.location.origin}/auth/callback`,
-      },
-    })
-    return { error: error ? new Error(error.message) : null }
+    // Registro vía BFF (mismo flujo que signIn: el BFF habla con Supabase Auth)
+    try {
+      await signupViaBff(
+        email,
+        password,
+        metadata,
+        emailRedirectTo ?? `${window.location.origin}/auth/callback`
+      )
+      return { error: null }
+    } catch (err) {
+      return { error: err instanceof Error ? err : new Error('Error al registrarse') }
+    }
   }
 
   async function signInWithGoogle() {
