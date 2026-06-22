@@ -1,3 +1,11 @@
+// ============================================================
+// MAIN.TSX — Punto de entrada del Front
+// Es lo primero que corre en el navegador: toma el <div id="root">
+// del index.html y monta ahí toda la app React (<App />).
+// También registra el Service Worker que convierte la web en PWA
+// (instalable en el celular), pero solo en producción.
+// ============================================================
+
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'

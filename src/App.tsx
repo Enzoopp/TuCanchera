@@ -1,3 +1,20 @@
+// ============================================================
+// APP.TSX — El corazón de la navegación del Front
+// Acá se define TODO el ruteo de la app y los "providers" globales:
+//   - QueryClientProvider: cache de datos (TanStack Query)
+//   - AuthProvider: sesión y rol del usuario, disponible en toda la app
+//   - BrowserRouter + Routes: qué componente se muestra según la URL
+//   - AppErrorBoundary: si algo explota, muestra un error legible
+//     en vez de una pantalla en blanco
+//
+// Las rutas están agrupadas por tipo:
+//   • Públicas de auth (login, register, etc.)
+//   • Pública (/explorar)
+//   • Protegidas (requieren login)
+//   • Superadmin / Admin (requieren ese rol)
+//   • Tenant por slug (/:slug — la página pública de cada complejo)
+// ============================================================
+
 import { BrowserRouter, Routes, Route, Outlet, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Component, type ErrorInfo, type ReactNode } from 'react'
