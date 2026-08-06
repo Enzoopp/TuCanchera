@@ -28,3 +28,7 @@ dist-ssr
 .claude/
 Pasos Claude Code.md
 Prompt Claude Code.md
+
+# Config local del MCP de Supabase — apunta al proyecto dev personal,
+# no tiene por qué aparecerle al resto del equipo
+.mcp.json
